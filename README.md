@@ -29,29 +29,29 @@ step does add independent security value.
 
 ## Usage
 
-\`\`\`rust
+```rust
 use mrs_auth_pqc::MrsAuthKem;
 
 let keypair = MrsAuthKem::kyber_keygen();
 
 let packet = MrsAuthKem::full_encrypt(
-    &keypair.public_key,
-    session_id,
-    hkdf_context,
-    &nonce,
-    associated_data,
-    plaintext,
+    &keypair.public_key, 
+    session_id, 
+    hkdf_context, 
+    &nonce, 
+    associated_data, 
+    plaintext, 
 )?;
 
 let plaintext = MrsAuthKem::full_decrypt(
-    &keypair.secret_key,
-    &packet,
-    session_id,
-    hkdf_context,
-    &nonce,
-    associated_data,
+    &keypair.secret_key, 
+    &packet, 
+    session_id, 
+    hkdf_context, 
+    &nonce, 
+    associated_data, 
 )?;
-\`\`\`
+```
 
 
 ## Build & Test
