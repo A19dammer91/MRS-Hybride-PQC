@@ -53,25 +53,26 @@ let plaintext = MrsAuthKem::full_decrypt(
 )?;
 \`\`\`
 
+
 ## Build & Test
 
-\`\`\`bash
+To validate the internal number-theoretic tests:
+```bash
 cargo test
-\`\`\`
+```
+
+To bench the official microsecond/nanosecond speed performance yourself:
+```bash
+cargo bench
+```
 
 ## Limitations
 
-- `derive_mrs_master_key` is deterministic and operates on whatever
-  `session_id` it is given. If `session_id` is known to an attacker
-  (the common case), `mk` provides no security margin. All
-  confidentiality relies entirely on Kyber1024's `k1`.
-- For the MRS step to contribute independent entropy, `session_id`
-  would need to be a secret shared via a channel independent of this
-  library, which introduces its own key-distribution problem.
+- `derive_mrs_master_key` is deterministic and operates on whatever `session_id` it is given. If `session_id` is known to an attacker (the common case), `mk` provides no security margin. All confidentiality relies entirely on Kyber1024's `k1`.
+- For the MRS step to contribute independent entropy, `session_id` would need to be a secret shared via a channel independent of this library, which introduces its own key-distribution problem.
 - This library has not undergone external cryptographic review.
-- The primary demonstrated contribution of MRS(19,9) is speed: a
-  constant-time O(1) derivation path, not an additional security
-  guarantee, when used with public session identifiers.
+- The primary demonstrated contribution of MRS(19,9) is speed: a constant-time O(1) derivation path, not an additional security guarantee, when used with public session identifiers.
+
 
 ## Dependencies
 
