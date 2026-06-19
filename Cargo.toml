@@ -1,0 +1,16 @@
+[package]
+name        = "mrs_auth_pqc"
+version     = "0.2.0"
+edition     = "2021"
+authors     = ["Bilal El Issaoui"]
+description = "MRS-AUTH hybride Post-Quantum KEM: Kyber1024 + MRS(19,9) Diophantische KDF + AES-256-GCM"
+
+[lib]
+name = "mrs_auth_pqc"
+path = "src/MRS_Hybride_Lib.rs"
+
+[dependencies]
+pqcrypto-kyber  = "0.8"
+pqcrypto-traits = "0.3"
+aes-gcm = "0.10"
+sha2    = "0.10"
