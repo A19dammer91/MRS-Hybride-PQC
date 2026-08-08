@@ -11,7 +11,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Post-Quantum KEM (Kyber-768/1024)
-pqc_kyber = "0.7"
+pqc_kyber = { version = "0.7", features = ["std"] }
 
 # Constante-tijd operaties tegen timing-attacks
 subtle = { version = "2.6", default-features = false }
