@@ -2,9 +2,11 @@
 # MRS-AUTH (Multiple Representation Systems Authentication)
 ### Post-Quantum Coercion-Resistant Authentication Framework
 
-[![DOI](https://zenodo.org)](https://doi.org)
-[![Status](https://shields.io)](#)
-[![Verification](https://shields.io)](#)
+# MRS-AUTH (Multiple Representation Systems Authentication)
+### Post-Quantum Coercion-Resistant Authentication Framework
+
+[![DOI](https://zenodo.org)](https://doi.org) ![Status](https://shields.io) ![Verification](https://shields.io)
+
 
 Hybrid Post-Quantum cryptographic library combining Kyber-KEM, multi-layer MRS(19,9) Diophantine chain sampling, and authenticated encryption.
 
