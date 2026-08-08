@@ -1,4 +1,5 @@
-use subtle::{ConstantTimeEq, Choice};
+use subtle::Choice;
+
 use zeroize::Zeroize;
 
 /// Struct die een LWE-geïsoleerde cryptografische parameter vasthoudt
