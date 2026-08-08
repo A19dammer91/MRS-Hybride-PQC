@@ -84,3 +84,50 @@ pub fn sample_three_layers(root_n: u64, seed_x: u64) -> Option<MrsChain> {
         valid: true,
     })
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_digital_root() {
+        assert_eq!(digital_root(0), 0);
+        assert_eq!(digital_root(9), 9);
+        assert_eq!(digital_root(10), 1); // 1 + 0 = 1
+        assert_eq!(digital_root(144), 9); // 1 + 4 + 4 = 9
+    }
+
+    #[test]
+    fn test_triangle_condition_validation() {
+        // Handmatig berekende testvector op basis van de specificatie
+        // Als X = 5, dan dr(X) = 5. Target = dr(2 * 5) = dr(10) = 1.
+        // Als B = 10, dan dr(B) = 1. Dit moet dus 'true' opleveren.
+        assert!(validate_triangle_condition(10, 5));
+        
+        // Als B = 9, dan dr(B) = 9 (matcht niet met 1), moet 'false' zijn
+        assert!(!validate_triangle_condition(9, 5));
+    }
+
+    #[test]
+    fn test_three_layer_sampler_success() {
+        // We testen met een startgetal N dat groot genoeg is om 3 lagen diep te nesten
+        let root_n = 50_000; 
+        let seed_x = 12345;
+        
+        let result = sample_three_layers(root_n, seed_x);
+        
+        // De sampler moet ofwel een geldige keten vinden, of veilig stoppen (None)
+        if let Some(chain) = result {
+            assert!(chain.valid);
+            assert_eq!(chain.layers.len(), 3);
+            
+            // Controleer of de Matryoshka-nesting wiskundig klopt: 
+            // De 'A' van laag 0 moet de 'N' zijn voor de berekening van laag 1
+            let layer_0_a = chain.layers[0].a;
+            let layer_1_a = chain.layers[1].a;
+            
+            // De 'A' waarden moeten logischerwijs steeds kleiner worden naarmate we dieper nesten
+            assert!(root_n > layer_0_a);
+            assert!(layer_0_a > layer_1_a);
+        }
+    }
+}
