@@ -1,5 +1,5 @@
 use crate::sampler::MrsChain;
-use pqc_kyber::{Keypair, PublicKey, SecretKey, ciphertext};
+use pqc_kyber::{Keypair, PublicKey, SecretKey};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use sha2::Sha256;
