@@ -3,12 +3,11 @@ use pqc_kyber::{Keypair, PublicKey, SecretKey, ciphertext};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use sha2::Sha256;
-use hmac::{Hmac, Mac};
+use hmac::Mac;
 use zeroize::Zeroize;
 
-type HkdfExtract = Hmac<Sha256>;
+type HkdfExtract = hmac::Hmac<Sha256>;
 
-/// Struct die het volledig gecoppelde post-kwantum cryptopakket bevat
 #[derive(Zeroize)]
 #[zeroize(drop)]
 pub struct HybridCiphertextPacket {
@@ -16,22 +15,19 @@ pub struct HybridCiphertextPacket {
     pub aes_payload: Vec<u8>,
 }
 
-/// Leidt een hybride symmetrische sleutel af door de Kyber gedeelde sleutel (SS)
-/// te koppelen aan de wiskundige MRS-chain via HKDF-Extract.
 pub fn derive_hybrid_key(
     kyber_ss: &[u8; pqc_kyber::KYBER_SSBYTES],
     mrs_chain: &MrsChain,
     session_id: &[u8]
 ) -> Result<[u8; 32], &'static str> {
-    // Combineer de MRS-lagen tot een platte byte-buffer
     let mut mrs_bytes = Vec::new();
     for pair in &mrs_chain.layers {
         mrs_bytes.extend_from_slice(&pair.a.to_be_bytes());
         mrs_bytes.extend_from_slice(&pair.b.to_be_bytes());
     }
 
-    // HKDF-Extract: Gebruik de session_id als salt en de MRS-bytes + Kyber SS als input key material
-    let mut extract = HkdfExtract::new_from_slice(session_id)
+    // Specifieke macro-aanroep om verwarring uit te sluiten
+    let mut extract = <HkdfExtract as hmac::Mac>::new_from_slice(session_id)
         .map_err(|_| "HKDF-Extract initialisatiefout")?;
     
     extract.update(kyber_ss);
@@ -44,7 +40,6 @@ pub fn derive_hybrid_key(
     Ok(hybrid_key)
 }
 
-/// Versleutelt een payload via AES-256-GCM met de afgeleide hybride post-kwantum sleutel
 pub fn encrypt_payload_hybrid(
     key_bytes: &[u8; 32],
     nonce_bytes: &[u8; 12],
@@ -63,7 +58,6 @@ pub fn encrypt_payload_hybrid(
     Ok(payload)
 }
 
-/// Ontsleutelt een payload via AES-256-GCM en valideert de integriteit (AEAD)
 pub fn decrypt_payload_hybrid(
     key_bytes: &[u8; 32],
     nonce_bytes: &[u8; 12],
