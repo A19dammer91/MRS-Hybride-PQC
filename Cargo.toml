@@ -3,14 +3,23 @@ name        = "mrs_auth_pqc"
 version     = "0.2.0"
 edition     = "2021"
 authors     = ["Bilal El Issaoui"]
-description = "MRS-AUTH hybride Post-Quantum KEM: Kyber1024 + MRS(19,9) Diophantische KDF + AES-256-GCM"
+description = "MRS-AUTH hybride Post-Quantum KEM: Kyber-768/1024 + MRS(19,9) Diophantische KDF + AES-256-GCM"
 
 [lib]
 name = "mrs_auth_pqc"
-path = "src/MRS_Hybride_Lib.rs"
+path = "src/lib.rs"
 
 [dependencies]
-pqcrypto-kyber  = "0.8"
-pqcrypto-traits = "0.3"
-aes-gcm = "0.10"
+# Post-Quantum KEM (Kyber-768/1024)
+pqc_kyber = "0.7"
+
+# Constante-tijd operaties tegen timing-attacks
+subtle = { version = "2.6", default-features = false }
+
+# Automatische geheugenwissing uit het RAM
+zeroize = { version = "1.8", features = ["derive"] }
+
+# Hashing en cryptografische bouwstenen
 sha2    = "0.10"
+hmac    = "0.12"
+aes-gcm = "0.10"
