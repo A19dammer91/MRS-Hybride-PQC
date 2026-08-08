@@ -1,89 +1,90 @@
-# MRS Hybride PQC
 
-Hybrid Post-Quantum cryptographic library combining Kyber1024 KEM,
-MRS(19,9) Diophantine key derivation, and AES-256-GCM encryption.
+# MRS-AUTH (Multiple Representation Systems Authentication)
+### Post-Quantum Coercion-Resistant Authentication Framework
+
+[![DOI](https://zenodo.org)](https://doi.org)
+[![Status](https://shields.io)](#)
+[![Verification](https://shields.io)](#)
+
+Hybrid Post-Quantum cryptographic library combining Kyber-KEM, multi-layer MRS(19,9) Diophantine chain sampling, and authenticated encryption.
 
 ## Overview
 
-This library couples a post-quantum key encapsulation mechanism
-(Kyber1024, NIST Security Level 5) with a fast, constant-time
-number-theoretic key derivation step based on the MRS(19,9) Diophantine
-decomposition system. The two derived values are combined via XOR into
-a single session key, which is then used for authenticated encryption.
+**MRS-AUTH** is a post-quantum authentication framework engineered to provide unconditional, information-theoretic deniability against unbounded passive adversaries, maintaining robust coercion resistance. 
+
+Unlike traditional cryptographic infrastructures relying on unique secret keys, MRS-AUTH leverages the vertical multiplicity of representations within a nested linear Diophantine system ($N = 19A + 9B$). By recursively nesting this decomposition across three functional layers ($L=3$), the protocol guarantees that an external attacker and a coerced user stand in computationally isomorphic positions. A user under duress can supply an alternative, mathematical "alibi" chain that is information-theoretically indistinguishable from the true credential.
 
 ## Architecture
 
-| Stage | Function | Description |
-|---|---|---|
-| Block 1 | `kyber_keygen`, `kyber_encapsulate`, `kyber_decapsulate` | Kyber1024 key encapsulation |
-| Block 2 | `derive_mrs_master_key` | MRS(19,9) decomposition → fast O(1) key derivation (A0 = N mod 9) |
-| Coupling | `hybrid_coupling` | k_combined = k1 XOR mk |
-| Block 3 | `encrypt_payload`, `decrypt_payload` | AES-256-GCM AEAD encryption/decryption |
-
-**Important:** the MRS(19,9) component is a constant-time, O(1)
-key-derivation step, not an independent security layer. When
-`session_id` is public (the default usage pattern), `derive_mrs_master_key`
-contributes no additional entropy; all cryptographic security in that
-case comes from Kyber1024's `k1`. See Limitations below for when this
-step does add independent security value.
+| Stage | Function / Module | Description |
+| :--- | :--- | :--- |
+| **Block 1** | `kyber_keygen`, `kyber_encapsulate` | Post-quantum Key Encapsulation Mechanism (Kyber-768/1024, IND-CCA2). |
+| **Block 2** | `sample_mrs_hierarchical_cdf` | Multi-layer Diophantine decomposition via a Weighted CDF Sampler ($A_0 = N \pmod 9$). |
+| **Block 3** | `k_acceptance_merkle_commitment` | Fixed-depth balanced tree combining the authentic path with $k-1$ decoy chains. |
+| **Block 4** | `lwe_chain_isolation` | Encapsulation of the target chain within an LWE instance ($b = A \cdot s + e$). |
+| **Coupling** | `hybrid_hkdf_coupling` | Asymmetric key-derivation via HKDF paired with `HMAC-SHA256` time-codes. |
+| **Block 5** | `encrypt_payload`, `decrypt_payload` | AES-256-GCM AEAD authenticated encryption/decryption. |
 
 ## Usage
 
 ```rust
-use mrs_auth_pqc::MrsAuthKem;
+use mrs_auth_pqc::MrsAuthFramework;
 
-let keypair = MrsAuthKem::kyber_keygen();
+// 1. Generate post-quantum keypair and initialize framework parameters
+let keypair = MrsAuthFramework::keygen();
 
-let packet = MrsAuthKem::full_encrypt(
-    &keypair.public_key, 
-    session_id, 
-    hkdf_context, 
-    &nonce, 
-    associated_data, 
-    plaintext, 
-)?;
+// 2. Execute full deniable encapsulation with active-verifier security
+let packet = MrsAuthFramework::full_encrypt(
+    &keypair.public_key,
+    &session_id,
+    &hkdf_context,
+    &nonce,
+    associated_data,
+    plaintext,
+);
 
-let plaintext = MrsAuthKem::full_decrypt(
-    &keypair.secret_key, 
-    &packet, 
-    session_id, 
-    hkdf_context, 
-    &nonce, 
-    associated_data, 
-)?;
+// 3. Authenticate and decrypt using time-locked forward secrecy
+let plaintext = MrsAuthFramework::full_decrypt(
+    &keypair.secret_key,
+    &packet,
+    &session_id,
+    &hkdf_context,
+    &nonce,
+    associated_data,
+);
 ```
-
 
 ## Build & Test
 
-To validate the internal number-theoretic tests:
+To validate the internal number-theoretic verification tests and EasyCrypt-aligned test vectors:
 ```bash
 cargo test
 ```
 
-To bench the official microsecond/nanosecond speed performance yourself:
+To bench the microsecond constant-time execution performance:
 ```bash
 cargo bench
 ```
 
-## Limitations
+## Formal Verification Status
 
-- `derive_mrs_master_key` is deterministic and operates on whatever `session_id` it is given. If `session_id` is known to an attacker (the common case), `mk` provides no security margin. All confidentiality relies entirely on Kyber1024's `k1`.
-- For the MRS step to contribute independent entropy, `session_id` would need to be a secret shared via a channel independent of this library, which introduces its own key-distribution problem.
-- This library has not undergone external cryptographic review.
-- The primary demonstrated contribution of MRS(19,9) is speed: a constant-time O(1) derivation path, not an additional security guarantee, when used with public session identifiers.
+All core security properties, algorithmic non-interference vectors, and uniformity theorems are formalized and machine-verified using the **EasyCrypt** proof assistant.
 
+* `MRS_AUTH.ec`: Core formalization of the linear Diophantine step family.
+* `MRS_Sampling.ec`: Machine proof of the Hierarchical Weighted CDF Sampler.
+* `temporal_barrier_noninterference`: Formally proven resilience against active timing-analysis.
 
-## Dependencies
+## Implementation Safeguards & Limitations
 
-- pqcrypto-kyber - Kyber1024 post-quantum KEM
-- aes-gcm - AES-256-GCM AEAD encryption
-- sha2 - SHA-256 for MRS master key derivation
+* **Constant-Time Operations**: Logical comparisons and core arithmetic branches utilize the `subtle` crate to enforce branch-free execution paths and eliminate timing side-channels.
+* **Temporal Barrier**: Hard runtime execution limits (`sample_mrs_eea_timed`) are enforced to abort execution and return `None` upon timing disruptions or active network probing.
+* **Memory Lifecycles**: All transient intermediate secret states and Diophantine representation arrays are bound to the `Zeroize` compiler trait to ensure immediate sanitization from RAM upon dropping out of scope.
+* **Review Status**: While the underlying mathematical model and core cryptographic games are fully machine-verified via EasyCrypt, this library represents a research-phase framework and has not undergone independent external production-grade security audits.
 
-## License
+## Citation & Documentation
 
-Apache-2.0
+For the complete theoretical proofs, mathematical derivations, and EasyCrypt code listings, please refer to the official specification published on Zenodo:
 
-## Author
-
-Bilal El Issaoui
+> **Title**: The Forest Analogy: Full Specification of the MRS-AUTH Cryptographic Framework  
+> **Author**: Bilal El Issaoui  
+> **Permanent DOI**: [10.5281/zenodo.21852606](https://doi.org)
