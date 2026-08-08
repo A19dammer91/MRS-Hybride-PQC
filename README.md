@@ -1,12 +1,7 @@
-
-# MRS-AUTH (Multiple Representation Systems Authentication)
-### Post-Quantum Coercion-Resistant Authentication Framework
-
 # MRS-AUTH (Multiple Representation Systems Authentication)
 ### Post-Quantum Coercion-Resistant Authentication Framework
 
 [![DOI](https://zenodo.org)](https://doi.org) ![Status](https://shields.io) ![Verification](https://shields.io)
-
 
 Hybrid Post-Quantum cryptographic library combining Kyber-KEM, multi-layer MRS(19,9) Diophantine chain sampling, and authenticated encryption.
 
@@ -90,3 +85,4 @@ For the complete theoretical proofs, mathematical derivations, and EasyCrypt cod
 > **Title**: The Forest Analogy: Full Specification of the MRS-AUTH Cryptographic Framework  
 > **Author**: Bilal El Issaoui  
 > **Permanent DOI**: [10.5281/zenodo.21852606](https://doi.org)
+> 
