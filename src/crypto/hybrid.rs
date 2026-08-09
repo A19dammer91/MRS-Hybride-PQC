@@ -1,9 +1,8 @@
 use crate::sampler::MrsChain;
-use pqc_kyber::{Keypair, PublicKey, SecretKey};
+use pqc_kyber::KYBER_SSBYTES;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use sha2::Sha256;
-use hmac::Mac;
 use zeroize::Zeroize;
 
 type HkdfExtract = hmac::Hmac<Sha256>;
@@ -16,7 +15,7 @@ pub struct HybridCiphertextPacket {
 }
 
 pub fn derive_hybrid_key(
-    kyber_ss: &[u8; pqc_kyber::KYBER_SSBYTES],
+    kyber_ss: &[u8; KYBER_SSBYTES],
     mrs_chain: &MrsChain,
     session_id: &[u8]
 ) -> Result<[u8; 32], &'static str> {
@@ -26,12 +25,12 @@ pub fn derive_hybrid_key(
         mrs_bytes.extend_from_slice(&pair.b.to_be_bytes());
     }
 
-    // Specifieke macro-aanroep om verwarring uit te sluiten
+    // Volledig gekwalificeerde hmac::Mac aanroep om alle ambiguities op te lossen
     let mut extract = <HkdfExtract as hmac::Mac>::new_from_slice(session_id)
         .map_err(|_| "HKDF-Extract initialisatiefout")?;
     
-    extract.update(kyber_ss);
-    extract.update(&mrs_bytes);
+    <HkdfExtract as hmac::Mac>::update(&mut extract, kyber_ss);
+    <HkdfExtract as hmac::Mac>::update(&mut extract, &mrs_bytes);
     
     let prk = extract.finalize().into_bytes();
     let mut hybrid_key = [0u8; 32];
