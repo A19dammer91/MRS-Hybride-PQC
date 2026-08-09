@@ -4,6 +4,7 @@ use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use sha2::Sha256;
 use zeroize::Zeroize;
+use hmac::Mac;
 
 type HkdfExtract = hmac::Hmac<Sha256>;
 
@@ -25,12 +26,11 @@ pub fn derive_hybrid_key(
         mrs_bytes.extend_from_slice(&pair.b.to_be_bytes());
     }
 
-    // Volledig gekwalificeerde hmac::Mac aanroep om alle ambiguities op te lossen
-    let mut extract = <HkdfExtract as hmac::Mac>::new_from_slice(session_id)
+    let mut extract = <HkdfExtract as Mac>::new_from_slice(session_id)
         .map_err(|_| "HKDF-Extract initialisatiefout")?;
     
-    <HkdfExtract as hmac::Mac>::update(&mut extract, kyber_ss);
-    <HkdfExtract as hmac::Mac>::update(&mut extract, &mrs_bytes);
+    <HkdfExtract as Mac>::update(&mut extract, kyber_ss);
+    <HkdfExtract as Mac>::update(&mut extract, &mrs_bytes);
     
     let prk = extract.finalize().into_bytes();
     let mut hybrid_key = [0u8; 32];
