@@ -1,7 +1,14 @@
-// Registreer alle vier de interne hoofdmodules van het framework
+// Dwing de compiler naar de juiste submappen met mod.rs
+#[path = "core/mod.rs"]
 pub mod core;
+
+#[path = "sampler/mod.rs"]
 pub mod sampler;
+
+#[path = "security/mod.rs"]
 pub mod security;
+
+#[path = "crypto/mod.rs"]
 pub mod crypto;
 
 // Exposeer de belangrijkste basistypes direct vanuit de root van de library
