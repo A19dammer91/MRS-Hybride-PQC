@@ -1,8 +1,10 @@
-use hmac::{Hmac, Mac};
+
+
 use sha2::Sha256;
 use zeroize::Zeroize;
+use hmac::Mac;
 
-type HmacSha256 = Hmac<Sha256>;
+type HmacSha256 = hmac::Hmac<Sha256>;
 
 #[derive(Debug, Clone, Zeroize)]
 #[zeroize(drop)]
@@ -11,8 +13,7 @@ pub struct TimeCode {
 }
 
 pub fn generate_timecode(secret_anchor: &[u8], timestamp: u64) -> Result<TimeCode, &'static str> {
-    // Hier dwingen we expliciet hmac::Mac af om verwarring met aes-gcm te voorkomen
-    let mut mac = <HmacSha256 as hmac::Mac>::new_from_slice(secret_anchor)
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(secret_anchor)
         .map_err(|_| "Fout bij initialiseren van HMAC sleutel")?;
     
     mac.update(&timestamp.to_be_bytes());
@@ -23,4 +24,3 @@ pub fn generate_timecode(secret_anchor: &[u8], timestamp: u64) -> Result<TimeCod
     
     Ok(TimeCode { value: code_bytes })
 }
-
