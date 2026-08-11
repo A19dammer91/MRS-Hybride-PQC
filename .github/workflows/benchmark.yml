@@ -1,0 +1,43 @@
+name: Sampler Benchmark
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}  # handmatig starten via de Actions-tab
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run benchmark
+        run: cargo bench --bench sampler_bench | tee bench_output.txt
+
+      - name: Summarize in GitHub Actions Summary
+        run: |
+          echo "## Sampler Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat bench_output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Gedraaid op een gedeelde GitHub Actions-runner (ubuntu-latest)._" >> $GITHUB_STEP_SUMMARY
+          echo "_Absolute tijden zijn indicatief, niet geschikt voor side-channel-claims (zie paper §10)._" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload raw criterion report
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-report
+          path: target/criterion/
