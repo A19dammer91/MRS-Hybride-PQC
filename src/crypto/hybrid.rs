@@ -27,11 +27,11 @@ pub fn derive_hybrid_key(
     }
 
     let mut extract = <HkdfExtract as Mac>::new_from_slice(session_id)
-        .map_err(|_| "HKDF-Extract initialisatiefout")?;
-    
+        .map_err(|_| "HKDF-Extract initialization error")?;
+
     <HkdfExtract as Mac>::update(&mut extract, kyber_ss);
     <HkdfExtract as Mac>::update(&mut extract, &mrs_bytes);
-    
+
     let prk = extract.finalize().into_bytes();
     let mut hybrid_key = [0u8; 32];
     hybrid_key.copy_from_slice(&prk[0..32]);
@@ -52,7 +52,7 @@ pub fn encrypt_payload_hybrid(
     let payload = cipher.encrypt(nonce, aes_gcm::aead::Payload {
         msg: plaintext,
         aad: associated_data,
-    }).map_err(|_| "AES-GCM encryptiefout")?;
+    }).map_err(|_| "AES-GCM encryption failed")?;
 
     Ok(payload)
 }
@@ -70,7 +70,7 @@ pub fn decrypt_payload_hybrid(
     let plaintext = cipher.decrypt(nonce, aes_gcm::aead::Payload {
         msg: ciphertext,
         aad: associated_data,
-    }).map_err(|_| "AES-GCM decryptiefout (Integriteitscontrole gefaald)")?;
+    }).map_err(|_| "AES-GCM decryption failed (integrity check failed)")?;
 
     Ok(plaintext)
 }
