@@ -3,15 +3,15 @@ name        = "mrs_auth_pqc"
 version     = "0.2.0"
 edition     = "2021"
 authors     = ["Bilal El Issaoui"]
-description = "MRS-AUTH hybrid post-quantum KEM: Kyber-768/1024 + MRS(19,9) Diophantine KDF + AES-256-GCM"
+description = "MRS-AUTH hybrid post-quantum KEM: Kyber1024 (NIST Level 5) + MRS(19,9) Diophantine KDF + AES-256-GCM"
 
 [lib]
 name = "mrs_auth_pqc"
 path = "src/lib.rs"
 
 [dependencies]
-# Post-quantum KEM (Kyber-768/1024)
-pqc_kyber = { version = "0.7", features = ["std"] }
+# Post-quantum KEM -- Kyber1024 (NIST Level 5), per the paper's security claims
+pqc_kyber = { version = "0.7", features = ["std", "kyber1024"] }
 
 # Constant-time operations against timing attacks
 subtle = { version = "2.6", default-features = false }
