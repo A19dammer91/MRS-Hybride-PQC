@@ -1,8 +1,8 @@
 // benches/sampler_bench.rs
 //
-// Draaien: cargo bench
-// Output: target/criterion/*/report/index.html (lokaal), en een
-// samenvattende tabel in stdout / CI-log.
+// Run: cargo bench
+// Output: target/criterion/*/report/index.html (local), plus a
+// summary table in stdout / the CI log.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use mrs_auth_pqc::sampler::sample_three_layers;
@@ -10,9 +10,10 @@ use mrs_auth_pqc::sampler::sample_three_layers;
 fn bench_sampler_across_scales(c: &mut Criterion) {
     let mut group = c.benchmark_group("sample_three_layers");
 
-    // Vier schalen binnen het u64-bereik (max ~1.8 x 10^19).
-    // Cryptografische schaal (N ~ 10^42, zoals in de paper) vereist een
-    // big-integer-omzetting van de sampler zelf -- zie opmerking onderaan.
+    // Four scales within the u64 range (max ~1.8 x 10^19).
+    // Cryptographic scale (N ~ 10^42, as used in the paper) requires
+    // converting the sampler itself to a big-integer type -- see the
+    // note at the bottom.
     let scales: [(&str, u64); 4] = [
         ("small_1e6", 1_000_003),
         ("moderate_1e9", 1_000_000_003),
@@ -35,10 +36,9 @@ fn bench_sampler_across_scales(c: &mut Criterion) {
 criterion_group!(benches, bench_sampler_across_scales);
 criterion_main!(benches);
 
-// Opmerking: N in de buurt van 10^42 (waar de paper entropie-uitspraken
-// over doet) overschrijdt het bereik van u64. Voor een benchmark die
-// dezelfde ordes van grootte dekt, moet de sampler eerst omgezet worden
-// naar een big-integer type (bijv. de `num-bigint` crate) -- een aparte
-// aanpassing, los van deze benchmark-harness. Vermeld dit expliciet als
-// kanttekening als je deze resultaten in de paper opneemt.
-</parameter>
+// Note: N on the order of 10^42 (the scale the paper's entropy claims
+// refer to) exceeds the range of u64. Benchmarking at that same order
+// of magnitude would require first converting the sampler to a
+// big-integer type (e.g. the `num-bigint` crate) -- a separate change,
+// outside the scope of this benchmark harness. Call this out explicitly
+// as a caveat if you cite these results in the paper.
