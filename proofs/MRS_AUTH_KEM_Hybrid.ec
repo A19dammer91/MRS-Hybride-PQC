@@ -1,31 +1,32 @@
 (* ================================================================= *)
-(* MRS_AUTH_KEM_Hybrid.ec *)
-(* Hoofdconstructie: hybride KEM die Kyber (post-quantum, *)
-(* probabilistische KeyGen conform FIPS 203/ML-KEM) combineert met *)
-(* de MRS(19,9)-keten via een XOR-koppeling. *)
-(* *)
-(* Hoofdstelling: mrs_auth_kem_ind_cca2 *)
-(* Een aanval op het volledige hybride protocol is wiskundig *)
-(* onmogelijk, tenzij de aanvaller ofwel de onderliggende Kyber-KEM *)
-(* breekt, ofwel de MRS-keten breekt (d.w.z. de MRS-mastersleutel van *)
-(* uniform willekeurig kan onderscheiden). *)
-(* *)
-(* Zie MRS_Kyber.ec voor de eerdere, seed-gebaseerde iteratie die *)
-(* door dit ontwerp wordt vervangen. *)
+(* MRS_AUTH_KEM_Hybrid.ec                                            *)
+(* Main construction: hybrid KEM that combines Kyber (post-quantum,  *)
+(* probabilistic KeyGen conforming to FIPS 203/ML-KEM) with the      *)
+(* MRS(19,9) chain via an XOR combiner.                              *)
+(*                                                                   *)
+(* Main theorem: mrs_auth_kem_ind_cca2                               *)
+(* An attack on the full hybrid protocol is mathematically           *)
+(* impossible unless the attacker either breaks the underlying       *)
+(* Kyber KEM, or breaks the MRS chain (i.e., can distinguish the     *)
+(* MRS master key from uniformly random).                            *)
+(*                                                                   *)
+(* See MRS_Kyber.ec for the earlier, seed‑based iteration that is    *)
+(* replaced by this design.                                          *)
 (* ================================================================= *)
+
 require import AllCore Int Real Distr List.
 require import StdOrder.
 import IntOrder.
 require import MRS_Core MRS_Chain MRS_Honey.
 
 (* ----------------------------------------------------------------- *)
-(* Typesynoniemen *)
+(* Type synonyms                                                     *)
 (* ----------------------------------------------------------------- *)
 type pkey.
 type skey.
 type ctxt.
 type ss.      (* Kyber shared secret, k1 *)
-type mkey.    (* MRS-mastersleutel, mk, en de gecombineerde sleutel *)
+type mkey.    (* MRS master key, mk, and the combined key *)
 
 op dss  : ss distr.
 op dmk  : mkey distr.
@@ -36,17 +37,17 @@ axiom dmk_uniform  : is_uniform dmk.
 axiom dss_full  : is_full dss.
 axiom dmk_full  : is_full dmk.
 
-(* XOR-operator: combineert een Kyber shared secret met de *)
-(* MRS-mastersleutel tot een sleutel van het mkey-formaat. *)
+(* XOR operator: combines a Kyber shared secret with the MRS master  *)
+(* key into a key of type mkey.                                      *)
 op (^^) : ss -> mkey -> mkey.
 
 (* ----------------------------------------------------------------- *)
-(* One-time-pad-kern: (.^^mk) is een bijectie tussen ss en mkey voor *)
-(* elke vaste mk, met inverse xor_inv(., mk). Dit is de wiskundige *)
-(* eigenschap die aan elke XOR-gebaseerde sleutelkoppeling ten *)
-(* grondslag ligt (vgl. het one-time-pad): XOR met een vaste waarde *)
-(* is zijn eigen inverse operatie op een groep, en beeldt dus de *)
-(* uniforme verdeling af op de uniforme verdeling. *)
+(* One‑time‑pad kernel: (.^^mk) is a bijection between ss and mkey   *)
+(* for each fixed mk, with inverse xor_inv(., mk). This is the       *)
+(* mathematical core of any XOR‑based key combiner (cf. one‑time     *)
+(* pad): XOR with a fixed value is its own inverse operation on a    *)
+(* group, and thus maps the uniform distribution to the uniform      *)
+(* distribution.                                                     *)
 (* ----------------------------------------------------------------- *)
 op xor_inv : mkey -> mkey -> ss.  (* xor_inv(k_combined, mk) = k1 *)
 
@@ -55,11 +56,11 @@ axiom xor_left_inv (k1 : ss) (mk : mkey) :
 axiom xor_right_inv (kc : mkey) (mk : mkey) :
   (xor_inv kc mk) ^^ mk = kc.
 
-(* Omdat (.^^mk) en xor_inv(.,mk) elkaars inverse zijn op de volledige *)
-(* dragers van dss en dmk (beide uniforme verdelingen, dss_full/ *)
-(* dmk_full), stuurt (.^^mk) de uniforme verdeling op ss naar de *)
-(* uniforme verdeling op mkey, voor elke vaste mk. Dit is het formele *)
-(* hart van de "robuuste combiner"-eigenschap. *)
+(* Because (.^^mk) and xor_inv(.,mk) are each other's inverses on    *)
+(* the full supports of dss and dmk (both uniform, dss_full /        *)
+(* dmk_full), (.^^mk) maps the uniform distribution on ss to the     *)
+(* uniform distribution on mkey for each fixed mk. This is the       *)
+(* formal heart of the "robust combiner" property.                   *)
 lemma xor_pushforward_uniform (mk : mkey) :
   dmap dss (fun k1 => k1 ^^ mk) = dmk.
 proof.
@@ -77,16 +78,17 @@ proof.
   smt(dss_uniform dmk_uniform mu1_uni).
 qed.
 
-(* xor_pushforward_uniform hierboven is de volledige, herbruikbare *)
-(* vorm van dit argument: voor elke vaste mk stuurt (.^^mk) de *)
-(* uniforme verdeling dss naar de uniforme verdeling dmk. Dat is het *)
-(* enige feit dat de reductie hieronder nodig heeft. *)
+(* xor_pushforward_uniform above is the full, reusable form of this  *)
+(* argument: for each fixed mk, (.^^mk) maps the uniform             *)
+(* distribution dss to the uniform distribution dmk. This is the     *)
+(* only fact needed in the reduction below.                          *)
 
 (* ----------------------------------------------------------------- *)
-(* Probabilistische KEM-interface â€” GEEN externe seed-parameter. *)
-(* Dit is de expliciete architecturale keuze die MRS_Kyber.ec *)
-(* vervangt: keygen dwingt interne stochastiek af en sluit zo *)
-(* menselijke fouten bij seed-keuze uit, conform FIPS 203. *)
+(* Probabilistic KEM interface — NO external seed parameter.         *)
+(* This is the explicit architectural choice that replaces           *)
+(* MRS_Kyber.ec: keygen enforces internal randomness, thus           *)
+(* eliminating human errors in seed selection, in compliance with    *)
+(* FIPS 203.                                                         *)
 (* ----------------------------------------------------------------- *)
 module type PQC_KEM = {
   proc keygen() : pkey * skey
@@ -94,13 +96,16 @@ module type PQC_KEM = {
   proc decaps(sk : skey, c : ctxt) : ss option
 }.
 
+(* Correctness: for every key pair (pk,sk) produced by keygen,       *)
+(* decaps(sk, encaps(pk)) returns the same shared secret.            *)
 axiom kem_correct (KEM <: PQC_KEM) :
-  hoare [KEM.encaps :
-    true ==>
-    hoare [KEM.decaps : arg = (glob KEM, res{-1}.`1) ==> res = Some res{-1}.`2]].
+  hoare [KEM.keygen : true ==>
+    hoare [KEM.encaps : pk = res{-1}.`1 ==>
+      hoare [KEM.decaps : sk = res{-2}.`2 /\ c = res{-1}.`1 ==>
+        res = Some res{-1}.`2]]].
 
 (* ----------------------------------------------------------------- *)
-(* IND-CCA2 spel voor de kale Kyber-KEM (probabilistische versie) *)
+(* IND‑CCA2 game for the plain Kyber KEM (probabilistic version)     *)
 (* ----------------------------------------------------------------- *)
 module type CCA2_Adv = {
   proc find(pk : pkey) : unit
@@ -121,21 +126,21 @@ module IND_CCA2 (KEM : PQC_KEM) (A : CCA2_Adv) = {
 }.
 
 op negl : int -> real.
-op Î» : int.
+op lambda : int.
 axiom negl_pos : forall n, 0%r <= negl n.
-axiom negl_const_mul : forall (c : int), 0 <= c => c%r * negl Î» <= negl Î».
+axiom negl_const_mul : forall (c : int), 0 <= c => c%r * negl lambda <= negl lambda.
 
-(* De Kyber-IND-CCA2-aanname: geen efficiÃ«nte adversary wint significant *)
+(* Kyber IND‑CCA2 assumption: no efficient adversary wins non‑negligibly *)
 axiom kyber_ind_cca2_secure (KEM <: PQC_KEM) (A <: CCA2_Adv) &m :
-  `| Pr[IND_CCA2(KEM, A).main() @ &m : res] - 1%r/2%r | <= negl Î».
+  `| Pr[IND_CCA2(KEM, A).main() @ &m : res] - 1%r/2%r | <= negl lambda.
 
 (* ----------------------------------------------------------------- *)
-(* MRS-mastersleutel afleiding. *)
+(* MRS master key derivation.                                        *)
 (* ----------------------------------------------------------------- *)
 op derive_mk : int list -> mkey.  (* mk = H(chain), abstract via RO *)
 
 (* ----------------------------------------------------------------- *)
-(* Het hybride protocol *)
+(* The hybrid protocol                                               *)
 (* ----------------------------------------------------------------- *)
 module HybridKEM (KEM : PQC_KEM) = {
   proc keygen() : pkey * skey = {
@@ -183,11 +188,11 @@ module Hybrid_IND_CCA2 (KEM : PQC_KEM) (A : Hybrid_CCA2_Adv) = {
 }.
 
 (* ================================================================= *)
-(* Reductie: bouw uit elke Hybrid_CCA2_Adv A een CCA2_Adv B_hyb die *)
-(* de kale Kyber-KEM aanvalt. B_hyb sampelt zelf de MRS-keten (dit *)
-(* kost geen orakeltoegang tot KEM, dus verstoort de simulatie niet) *)
-(* en XOR-t het antwoord van zijn eigen uitdager met mk voordat het *)
-(* aan A wordt doorgegeven. *)
+(* Reduction: from any Hybrid_CCA2_Adv A build a CCA2_Adv B_hyb that *)
+(* attacks the plain Kyber KEM. B_hyb samples the MRS chain itself   *)
+(* (this costs no oracle access to KEM, so it does not disturb the   *)
+(* simulation) and XORs the answer from its own challenger with mk   *)
+(* before passing it to A.                                           *)
 (* ================================================================= *)
 section HybridReduction.
 
@@ -215,18 +220,18 @@ local module B_hyb : CCA2_Adv = {
 }.
 
 (* ----------------------------------------------------------------- *)
-(* Stap 1: perfecte koppeling tussen Hybrid_IND_CCA2(KEM,A) en *)
-(* IND_CCA2(KEM,B_hyb). *)
-(* *)
-(* - Wanneer de uitdager het echte gedeelde geheim geeft (b=0 in *)
-(* beide spelen): k_combined = k1 ^^ mk in beide routes, met *)
-(* identieke k1 (zelfde Kyber-aanroep, gekoppeld via de call) en *)
-(* identieke mk (zelfde ketenparameters N, depth, tri). *)
-(* - Wanneer de uitdager een vers willekeurig geheim geeft (b=1): *)
-(* Hybrid trekt k1_rand direct uit dmk; IND_CCA2 trekt k1 uit dss *)
-(* en B_hyb berekent k1 ^^ mk. Door xor_pushforward_uniform zijn *)
-(* deze twee routes exact gelijk verdeeld â€” de rnd-tactiek koppelt *)
-(* ze via de bijectie (.^^mk) / xor_inv(., mk). *)
+(* Step 1: perfect coupling between Hybrid_IND_CCA2(KEM,A) and       *)
+(* IND_CCA2(KEM,B_hyb).                                              *)
+(*                                                                   *)
+(* - When the challenger gives the real shared secret (b=0 in both   *)
+(*   games): k_combined = k1 ^^ mk in both paths, with identical     *)
+(*   k1 (same Kyber call, coupled via the call) and identical mk     *)
+(*   (same chain parameters N, depth, tri).                          *)
+(* - When the challenger gives a fresh random secret (b=1):          *)
+(*   Hybrid draws k1_rand directly from dmk; IND_CCA2 draws k1 from  *)
+(*   dss and B_hyb computes k1 ^^ mk. By xor_pushforward_uniform     *)
+(*   these two paths are exactly equally distributed – the rnd tactic*)
+(*   couples them via the bijection (.^^mk) / xor_inv(., mk).        *)
 (* ----------------------------------------------------------------- *)
 local lemma hybrid_to_kyber_equiv &m :
   Pr[Hybrid_IND_CCA2(KEM, A).main(N, depth, tri) @ &m : res] =
@@ -236,28 +241,28 @@ proof.
   proc.
   inline HybridKEM(KEM).keygen HybridKEM(KEM).encaps.
   inline B_hyb.find B_hyb.distinguish.
-  (* Koppel keygen exact *)
+  (* Couple keygen exactly *)
   seq 3 3 : (={glob KEM} /\ pk{1} = pk{2} /\ sk{1} = sk{2}).
   - call (: true); auto.
-  (* Koppel A.find (identieke aanroep in beide routes) *)
+  (* Couple A.find (identical call in both paths) *)
   seq 1 1 : (={glob KEM, glob A} /\ pk{1} = pk{2} /\ sk{1} = sk{2}).
   - call (: true); auto.
-  (* Koppel de Kyber-encapsulatie: identieke (pk,sk), dus identieke *)
-  (* verdeling over (c, k1). *)
+  (* Couple the Kyber encapsulation: identical (pk,sk), so identical *)
+  (* distribution over (c, k1). *)
   seq 3 2 : (={glob KEM, glob A} /\ c{1} = c{2} /\ k1{1} = k1{2}).
   - inline*.
     call (: true); auto.
-  (* Bereken de keten en mk identiek in beide routes (zelfde N, *)
-  (* depth, tri, geen afhankelijkheid van k1 of pk). *)
+  (* Compute chain and mk identically in both paths (same N, depth,   *)
+  (* tri, no dependence on k1 or pk).                                *)
   seq 2 0 : (={glob KEM, glob A, c, k1} /\ mk{1} = derive_mk chain{1}).
   - auto.
-  (* Rechterkant: bereken mk direct in de distinguish-tak later; *)
-  (* koppel nu k0{1} (Hybrid) aan k1{2}, met k0{1} = k1{1} ^^ mk{1}. *)
+  (* Right side: compute mk directly in the distinguish branch later; *)
+  (* couple now k0{1} (Hybrid) to k1{2}, with k0{1} = k1{1} ^^ mk{1}. *)
   seq 1 0 : (={glob KEM, glob A, c, k1} /\ k0{1} = k1{1} ^^ mk{1}).
   - auto.
-  (* De willekeurige-sleutel-trekking: koppel via de bijectie zodat *)
-  (* k1_rand{1} = dmk-trekking overeenkomt met k1{2}<$dss gevolgd *)
-  (* door XOR met mk{1} aan de rechterkant. *)
+  (* Random‑secret draw: couple via the bijection so that            *)
+  (* k1_rand{1} = dmk‑draw corresponds to k1{2}<$dss followed by     *)
+  (* XOR with mk{1} on the right.                                    *)
   seq 1 1 : (={glob KEM, glob A, c, k1} /\ k0{1} = k1{1} ^^ mk{1} /\
              k1_rand{1} = k1_rnd_r{2} ^^ mk{1}).
   - rnd (fun k => k ^^ mk{1}) (fun kc => xor_inv kc mk{1}).
@@ -268,13 +273,13 @@ proof.
     + move=> _; rewrite -(xor_pushforward_uniform mk{1}).
       by rewrite dmap1E /pred1 /(\o) /=.
     + move=> kc _; rewrite xor_right_inv //.
-  (* Koppel de bit b *)
+  (* Couple the bit b *)
   seq 1 1 : (={glob KEM, glob A, c, k1, b} /\ k0{1} = k1{1} ^^ mk{1} /\
              k1_rand{1} = k1_rnd_r{2} ^^ mk{1}).
   - rnd; auto.
-  (* De uitdaging die aan A wordt doorgegeven is in beide routes *)
-  (* (k1{2} of k1_rnd_r{2}) ^^ mk{1}, exact gelijk aan k0{1} resp. *)
-  (* k1_rand{1} -- dus de aanroep van A.distinguish is identiek. *)
+  (* The challenge passed to A is in both paths (k1{2} or            *)
+  (* k1_rnd_r{2}) ^^ mk{1}, exactly equal to k0{1} resp.             *)
+  (* k1_rand{1} — so the call to A.distinguish is identical.         *)
   wp.
   call (: true); auto => /> &1 &2 _.
   case (b{2}).
@@ -283,32 +288,31 @@ proof.
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* Stap 2: pas de Kyber-IND-CCA2-aanname toe op B_hyb. *)
+(* Step 2: apply the Kyber IND‑CCA2 assumption to B_hyb.             *)
 (* ----------------------------------------------------------------- *)
 lemma mrs_auth_kem_ind_cca2 &m :
   `| Pr[Hybrid_IND_CCA2(KEM, A).main(N, depth, tri) @ &m : res] - 1%r/2%r |
-  <= negl Î».
+  <= negl lambda.
 proof.
   rewrite (hybrid_to_kyber_equiv &m).
   exact (kyber_ind_cca2_secure KEM B_hyb &m).
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* Corollarium: veiligheid blijft behouden bij compromittering van *)
-(* de MRS-keten alleen. Zelfs als mk volledig voorspelbaar zou zijn *)
-(* voor de aanvaller (bijvoorbeeld doordat de keten publiek bekend *)
-(* wordt, zoals bedoeld door het ontwerp), blijft k_combined *)
-(* ononderscheidbaar van uniform zolang Kyber's IND-CCA2-aanname *)
-(* geldt: het bewijs hierboven maakt op geen enkel punt gebruik van *)
-(* de geheimhouding van mk, alleen van de uniformiteit van k1. *)
+(* Corollary: security remains even if the MRS chain is compromised. *)
+(* Even if mk were completely predictable to the attacker (e.g.,     *)
+(* because the chain becomes public, as intended by the design),     *)
+(* k_combined remains indistinguishable from uniform as long as      *)
+(* Kyber's IND‑CCA2 assumption holds: the proof above does not rely  *)
+(* on the secrecy of mk at any point, only on the uniformity of k1.  *)
 (* ----------------------------------------------------------------- *)
 lemma mrs_auth_kem_resilient_to_chain_compromise &m :
   `| Pr[Hybrid_IND_CCA2(KEM, A).main(N, depth, tri) @ &m : res] - 1%r/2%r |
-  <= negl Î».
+  <= negl lambda.
 proof. exact (mrs_auth_kem_ind_cca2 &m). qed.
 
 end section HybridReduction.
 
 (* ================================================================= *)
-(* Einde van MRS_AUTH_KEM_Hybrid.ec *)
+(* End of MRS_AUTH_KEM_Hybrid.ec                                     *)
 (* ================================================================= *)
