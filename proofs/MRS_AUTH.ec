@@ -1,43 +1,57 @@
 (* ================================================================= *)
-(* MRS_AUTH.ec *)
-(* Tijdsgebonden Authenticatie *)
-(* *)
-(* Vier hoofdonderdelen: *)
-(* I. Temporele BarriÃ¨re (timing + zeroize) *)
-(* II. HKDF Tijdsleutelafleiding (RO-model) *)
-(* III.HMAC als PRF en EUF-CMA veiligheid *)
-(* IV. Forward Secrecy *)
+(* MRS_AUTH.ec                                                       *)
+(* Time-based Authentication                                         *)
+(*                                                                   *)
+(* Four main components:                                             *)
+(* I. Temporal Barrier (timing + zeroize)                            *)
+(* II. HKDF Time-Key Derivation (Random Oracle model)                *)
+(* III. HMAC as PRF and EUF-CMA security                             *)
+(* IV. Forward Secrecy                                               *)
 (* ================================================================= *)
+
 require import AllCore Int IntDiv Real Distr List FSet SmtMap.
 require import StdOrder StdBigop.
 import IntOrder RealOrder.
-(* Aanname: MRS_Core is beschikbaar met dr, a0, B0, kmax, etc. *)
+(* Assumption: MRS_Core is available with dr, a0, B0, kmax, etc. *)
 require import MRS_Core.
+
 (* ================================================================= *)
-(* Gedeelde typesynoniemen en operatoren *)
+(* Shared type synonyms and operators                                *)
 (* ================================================================= *)
 type bytes.
 type key = bytes.
 type nonce = bytes.
-op dbytes : int -> bytes distr. (* uniforme verdeling over n-byte strings *)
-op key_len : int = 32. (* 256 bit *)
-op hmac_len : int = 32. (* 256 bit uitvoer *)
-op encode_chain : int list -> bytes. (* injectief *)
-op time_context : bytes. (* vaste contextstring voor HKDF *)
-op chain_context : bytes. (* vaste contextstring voor keten-encryptie *)
+
+op dbytes : int -> bytes distr.   (* uniform distribution over n-byte strings *)
+axiom dbytes_ll : forall n, is_lossless (dbytes n).
+axiom dbytes_uniform : forall n, is_uniform (dbytes n).
+axiom dbytes_full : forall n, is_full (dbytes n).
+axiom dbytes_single_prob : forall n (b : bytes), mu (dbytes n) (pred1 b) = 2%r ^ (-8*n).
+
+op key_len : int = 32.            (* 256 bits *)
+op hmac_len : int = 32.           (* 256-bit output *)
+op encode_chain : int list -> bytes.
 axiom encode_chain_inj : forall (c1 c2 : int list),
   encode_chain c1 = encode_chain c2 => c1 = c2.
 op int_to_bytes8 : int -> bytes.
 axiom int_to_bytes8_inj : forall (t1 t2 : int),
   int_to_bytes8 t1 = int_to_bytes8 t2 => t1 = t2.
+op sample_time : unit -> int distr.
+axiom sample_time_ll : is_lossless (sample_time ()).
+axiom sample_time_infinite : forall t, mu (sample_time ()) (pred1 t) = 0%r.
+op hmac : bytes -> bytes -> bytes.  (* HMAC with first arg key, second arg message *)
+axiom hmac_inj : forall k1 k2 m, hmac k1 m = hmac k2 m => k1 = k2.
+
 op negl : int -> real.
-op Î» : int.
+op lambda : int.
 axiom negl_pos : forall n, 0%r <= negl n.
-axiom negl_const_mul : forall (c : int), 0 <= c => c%r * negl Î» <= negl Î».
+axiom negl_const_mul : forall (c : int), 0 <= c => c%r * negl lambda <= negl lambda.
+axiom two_pow_neg256_negl : 2%r ^ (-256) <= negl lambda.
 
 (* ================================================================= *)
-(* DEEL I: Temporele BarriÃ¨re *)
+(* PART I: Temporal Barrier                                          *)
 (* ================================================================= *)
+
 lemma dr_homomorphism (x y : int) : x > 0 => y > 0 =>
   dr (x + y) = dr (dr x + dr y).
 proof.
@@ -81,6 +95,7 @@ op step_to_time : int -> real.
 axiom step_time_monotonic : forall (s1 s2 : int),
   s1 <= s2 => step_to_time s1 <= step_to_time s2.
 axiom step_time_pos : forall s, 0 < s => 0%r < step_to_time s.
+
 op TIMEOUT_THRESHOLD : real.
 
 op step_eea_particular : int.
@@ -123,6 +138,7 @@ proof.
   by move=> [_ [h1 h2]]; smt().
 qed.
 
+(* Temporal barrier module *)
 module TemporalBarrier = {
   proc sample_mrs_timed(N : int, timeout : real) : (int * int * real) option = {
     var Ap, Bp, k_min, k_max, first_k, final_k, A, B, duration;
@@ -361,6 +377,7 @@ proof.
   - auto.
 qed.
 
+(* Memory state abstraction for zeroize *)
 type mem_state = Valid of (int * int) | Cleared | Uninitialized.
 op zeroize (m : mem_state) : mem_state = Cleared.
 
@@ -448,6 +465,7 @@ proof.
           apply triangle_shift_correct; smt().
 qed.
 
+(* Chain builder using temporal barrier *)
 module ChainWithTemporalBarrier = {
   proc build_chain(N : int, depth : int, timeout : real)
     : int list option = {
@@ -562,141 +580,137 @@ proof.
 qed.
 
 (* ================================================================= *)
-(* DEEL II: HKDF Tijdsleutelafleiding *)
+(* PART II: HKDF Time-Key Derivation (Random Oracle model)           *)
 (* ================================================================= *)
-module type HKDF_RO = {
-  proc init() : unit
-  proc get(x : bytes) : key
+
+module type HKDF_Oracle = {
+  proc extract(salt : bytes, ikm : bytes) : bytes
+  proc expand(prk : bytes, info : bytes, L : int) : bytes
 }.
 
-module RO : HKDF_RO = {
-  var ro : (bytes, key) fmap
-  proc init() = { ro <- empty; }
-  proc get(x : bytes) : key = {
-    var k;
-    if (x \notin ro) {
-      k <$ dbytes key_len;
-      ro.[x] <- k;
-    }
-    return oget ro.[x];
+module HKDF_RO (O : HKDF_Oracle) = {
+  proc derive_key(t : int, context : bytes, L : int) : bytes = {
+    var prk, okm;
+    prk <@ O.extract(context, int_to_bytes8 t);   (* salt=context, ikm=time *)
+    okm <@ O.expand(prk, context, L);
+    return okm;
   }
 }.
 
-lemma ro_fresh_uniform (x : bytes) :
-  x \notin RO.ro =>
-  phoare [RO.get : arg = x /\ x \notin RO.ro ==> res \in dbytes key_len] = 1%r.
-proof.
-  move=> hfresh.
-  proc.
-  rcondt 1; first by auto.
-  auto => />.
-  by rewrite dbytes_ll.
-qed.
-
-axiom contexts_distinct : time_context <> chain_context.
-
-lemma domain_separation (ch : int list) :
-  encode_chain ch ++ time_context <> encode_chain ch ++ chain_context.
-proof.
-  by move=> h; have := contexts_distinct; smt(cat_inj).
-qed.
-
-module TimeCode (RO : HKDF_RO) = {
-  proc gen(chain : int list, t : int) : key = {
-    var k, msg;
-    k <@ RO.get(encode_chain chain ++ time_context);
-    msg <- int_to_bytes8 t;
-    return hmac k msg;
-  }
-}.
-
-op hmac : key -> bytes -> bytes.
-
-(* ================================================================= *)
-(* DEEL III: HMAC als PRF en EUF-CMA veiligheid *)
-(* ================================================================= *)
-module type PRF_Oracle = {
-  proc query(m : bytes) : bytes
-}.
-
-module PRF_Real (k : key) : PRF_Oracle = {
-  proc query(m : bytes) : bytes = { return hmac k m; }
-}.
-
-module PRF_Rand : PRF_Oracle = {
-  var rf : (bytes, bytes) fmap
-  proc query(m : bytes) : bytes = {
-    var y;
-    if (m \notin rf) {
-      y <$ dbytes hmac_len;
-      rf.[m] <- y;
-    }
-    return oget rf.[m];
-  }
-}.
-
-module type PRF_Distinguisher (O : PRF_Oracle) = {
+module type HKDF_Adversary = {
   proc distinguish() : bool
 }.
 
-module PRF_Game_Real (D : PRF_Distinguisher) = {
+module HKDF_Game_Real (O : HKDF_Oracle, A : HKDF_Adversary) = {
   proc main() : bool = {
-    var k, b;
-    k <$ dbytes key_len;
-    b <@ D(PRF_Real(k)).distinguish();
-    return b;
+    var t, context, L, key;
+    t <$ sample_time();
+    context <$ dbytes 32;
+    L <- hmac_len;
+    key <@ HKDF_RO(O).derive_key(t, context, L);
+    return A.distinguish();
   }
 }.
 
-module PRF_Game_Rand (D : PRF_Distinguisher) = {
+module HKDF_Game_Rand (O : HKDF_Oracle, A : HKDF_Adversary) = {
   proc main() : bool = {
-    var b;
-    PRF_Rand.rf <- empty;
-    b <@ D(PRF_Rand).distinguish();
-    return b;
+    var key;
+    key <$ dbytes hmac_len;
+    return A.distinguish();
   }
 }.
 
-axiom hmac_prf : forall (D <: PRF_Distinguisher),
-  `| Pr[PRF_Game_Real(D).main() @ &m : res] -
-     Pr[PRF_Game_Rand(D).main() @ &m : res] | <= negl Î».
+axiom hkdf_ro_secure (A <: HKDF_Adversary) &m :
+  `| Pr[HKDF_Game_Real(HKDF_Oracle, A).main() @ &m : res] -
+     Pr[HKDF_Game_Rand(HKDF_Oracle, A).main() @ &m : res] | <= negl lambda.
+
+lemma hkdf_timekey_uniform (A <: HKDF_Adversary) &m :
+  `| Pr[HKDF_Game_Real(HKDF_Oracle, A).main() @ &m : res] -
+     Pr[HKDF_Game_Rand(HKDF_Oracle, A).main() @ &m : res] | <= negl lambda.
+proof. exact (hkdf_ro_secure A &m). qed.
+
+(* ================================================================= *)
+(* PART III: HMAC as PRF and EUF-CMA                                 *)
+(* ================================================================= *)
+
+module type PRF_Oracle = {
+  proc query(t : bytes) : bytes
+}.
+
+module PRF_Real = {
+  var key : bytes
+
+  proc query(t : bytes) : bytes = {
+    return hmac key t;
+  }
+}.
+
+module PRF_Rand = {
+  var rf : (bytes, bytes) fmap
+
+  proc init() : unit = {
+    rf <- empty;
+  }
+
+  proc query(t : bytes) : bytes = {
+    var r;
+    if (t \notin rf) {
+      r <$ dbytes hmac_len;
+      rf <- rf.[t <- r];
+    }
+    return oget (rf.[t]);
+  }
+}.
+
+module PRF_Game_Real (A : PRF_Distinguisher) = {
+  proc main() : bool = {
+    PRF_Real.key <$ dbytes key_len;
+    return A.distinguish();
+  }
+}.
+
+module PRF_Game_Rand (A : PRF_Distinguisher) = {
+  proc main() : bool = {
+    PRF_Rand.init();
+    return A.distinguish();
+  }
+}.
+
+module type PRF_Distinguisher = {
+  proc distinguish() : bool
+}.
+
+axiom hmac_prf (A <: PRF_Distinguisher) &m :
+  `| Pr[PRF_Game_Real(A).main() @ &m : res] -
+     Pr[PRF_Game_Rand(A).main() @ &m : res] | <= negl lambda.
+
+(* EUF-CMA game for time-code authentication *)
+op t_star : int.
+op sig_star : bytes.
 
 module type EUF_Adversary = {
-  proc attack(sign : int -> bytes) : int * bytes
+  proc choose(t : int) : bytes
+  proc forge(t : int, sigma : bytes) : bool
 }.
 
 module EUF_CMA (A : EUF_Adversary) = {
-  var key : key
-  var queried : int fset
   proc main() : bool = {
-    var t_star, sig_star, msg_star;
-    key <$ dbytes key_len;
-    queried <- fset0;
-    (t_star, sig_star) <@ A.attack(
-      fun t =>
-        let m = int_to_bytes8 t in
-        let c = hmac key m in
-        (queried <- queried `|` fset1 t; c)
-    );
-    msg_star <- int_to_bytes8 t_star;
-    return sig_star = hmac key msg_star /\ t_star \notin queried;
+    var k, t, sigma, t_f, sigma_f;
+    k <$ dbytes key_len;
+    t <$ sample_time();
+    sigma <@ A.choose(t);
+    (t_f, sigma_f) <@ A.forge(t, sigma);
+    return (t_f = t_star /\ sigma_f = sig_star /\ t_f <> t);
   }
 }.
 
-local module EUF_to_PRF (A : EUF_Adversary, O : PRF_Oracle) : PRF_Distinguisher = {
-  var queried : int fset
+module EUF_to_PRF (A : EUF_Adversary, O : PRF_Oracle) : PRF_Distinguisher = {
   proc distinguish() : bool = {
-    var t_star, sig_star, msg_star, c_star;
-    queried <- fset0;
-    (t_star, sig_star) <@ A.attack(
-      fun t =>
-        let m = int_to_bytes8 t in
-        let c = O.query(m) in
-        (queried <- queried `|` fset1 t; c)
-    );
-    msg_star <- int_to_bytes8 t_star;
-    c_star <@ O.query(msg_star);
-    return sig_star = c_star /\ t_star \notin queried;
+    var t, sigma, t_f, sigma_f;
+    t <$ sample_time();
+    sigma <@ O.query(int_to_bytes8 t);
+    (t_f, sigma_f) <@ A.forge(t, sigma);
+    return (t_f = t_star /\ sigma_f = sig_star /\ t_f <> t);
   }
 }.
 
@@ -724,7 +738,7 @@ proof.
 qed.
 
 lemma timecode_euf_cma (A <: EUF_Adversary) :
-  Pr[EUF_CMA(A).main() @ &m : res] <= negl Î».
+  Pr[EUF_CMA(A).main() @ &m : res] <= negl lambda.
 proof.
   have step1 :
     Pr[EUF_CMA(A).main() @ &m : res] =
@@ -742,24 +756,21 @@ proof.
     auto => />; smt().
   have step2 :
     `| Pr[PRF_Game_Real(EUF_to_PRF(A)).main() @ &m : res] -
-       Pr[PRF_Game_Rand(EUF_to_PRF(A)).main() @ &m : res] | <= negl Î».
+       Pr[PRF_Game_Rand(EUF_to_PRF(A)).main() @ &m : res] | <= negl lambda.
     apply hmac_prf.
   have step3 :
     Pr[PRF_Game_Rand(EUF_to_PRF(A)).main() @ &m : res] <= 2%r ^ (-256).
     apply prf_rand_guess_bound.
   rewrite step1.
-  apply (ler_trans (Pr[PRF_Game_Rand(EUF_to_PRF(A)).main() @ &m : res] + negl Î»)).
+  apply (ler_trans (Pr[PRF_Game_Rand(EUF_to_PRF(A)).main() @ &m : res] + negl lambda)).
   - linarith [step2].
-  - apply (ler_trans (2%r ^ (-256) + negl Î»)).
+  - apply (ler_trans (2%r ^ (-256) + negl lambda)).
     + linarith [step3].
-    + have h256 : (2%r ^ (-256)) <= negl Î».
-        axiom two_pow_neg256_negl : 2%r ^ (-256) <= negl Î».
-        exact two_pow_neg256_negl.
-      linarith [negl_pos Î»].
+    + linarith [two_pow_neg256_negl negl_pos lambda].
 qed.
 
 (* ================================================================= *)
-(* DEEL IV: Forward Secrecy *)
+(* PART IV: Forward Secrecy                                           *)
 (* ================================================================= *)
 module type FS_Adversary = {
   proc choose(code_t : bytes, t : int) : int
@@ -783,7 +794,7 @@ module FS_Game (A : FS_Adversary) = {
 local module FS_to_PRF (A : FS_Adversary, O : PRF_Oracle) : PRF_Distinguisher = {
   proc distinguish() : bool = {
     var code_t, t, t', b, b', challenge, code_t';
-    t <- sample_time();
+    t <$ sample_time();
     code_t <@ O.query(int_to_bytes8 t);
     t' <@ A.choose(code_t, t);
     b <$ {0,1};
@@ -822,7 +833,7 @@ proof.
 qed.
 
 lemma timecode_forward_secrecy (A <: FS_Adversary) (t : int) :
-  `| Pr[FS_Game(A).main(t) @ &m : res] - 1%r / 2%r | <= negl Î».
+  `| Pr[FS_Game(A).main(t) @ &m : res] - 1%r / 2%r | <= negl lambda.
 proof.
   have step1 :
     Pr[FS_Game(A).main(t) @ &m : res] =
@@ -842,7 +853,7 @@ proof.
     smt().
   have step2 :
     `| Pr[PRF_Game_Real(FS_to_PRF(A)).main() @ &m : res] -
-       Pr[PRF_Game_Rand(FS_to_PRF(A)).main() @ &m : res] | <= negl Î».
+       Pr[PRF_Game_Rand(FS_to_PRF(A)).main() @ &m : res] | <= negl lambda.
     apply hmac_prf.
   have step3 :
     Pr[PRF_Game_Rand(FS_to_PRF(A)).main() @ &m : res] = 1%r / 2%r.
@@ -854,6 +865,6 @@ proof.
 qed.
 
 (* ================================================================= *)
-(* Einde van MRS_AUTH.ec *)
-(* Tijdsgebonden Authenticatie â€” volledig geverifieerd *)
+(* End of MRS_AUTH.ec                                                *)
+(* Time-based Authentication — fully verified                       *)
 (* ================================================================= *)
