@@ -1,6 +1,6 @@
 (* ================================================================= *)
 (*  MRS_Core.ec                                                       *)
-(*  Wiskundige kern van MRS-AUTH: 19A+9B representatiesysteem        *)
+(*  Mathematical core of MRS-AUTH: the 19A+9B representation system  *)
 (* ================================================================= *)
 
 require import AllCore Int IntDiv Real Distr List.
@@ -8,11 +8,11 @@ require import StdOrder.
 import IntOrder.
 
 (* ----------------------------------------------------------------- *)
-(* Digitale wortel: 0 voor nâ‰¤0, anders 1 + ((n-1) mod 9)            *)
+(* Digital root: 0 for n<=0, otherwise 1 + ((n-1) mod 9)              *)
 (* ----------------------------------------------------------------- *)
 op dr (n : int) : int = if n <= 0 then 0 else 1 + ((n - 1) %% 9).
 
-(* Basiseigenschappen van dr *)
+(* Basic properties of dr *)
 lemma dr_range (n : int) : n > 0 => 1 <= dr n /\ dr n <= 9.
 proof.
   move=> hn.
@@ -29,7 +29,7 @@ proof.
   smt().
 qed.
 
-(* dr is congruent met n modulo 9, voor n > 0 *)
+(* dr is congruent to n modulo 9, for n > 0 *)
 lemma dr_cong9 (n : int) : n > 0 => (dr n - n) %% 9 = 0.
 proof.
   move=> hn.
@@ -40,7 +40,7 @@ proof.
   exact key.
 qed.
 
-(* dr(n + 9) = dr(n) voor n > 0 *)
+(* dr(n + 9) = dr(n) for n > 0 *)
 lemma dr_add9 (n : int) : n > 0 => dr (n + 9) = dr n.
 proof.
   move=> hn.
@@ -53,7 +53,7 @@ proof.
   by move=> ->.
 qed.
 
-(* dr(9 * k + r) = dr(r) voor r > 0 *)
+(* dr(9 * k + r) = dr(r) for r > 0 *)
 lemma dr_9k_r (k r : int) : r > 0 => dr (9 * k + r) = dr r.
 proof.
   move=> hr.
@@ -65,13 +65,13 @@ proof.
     by rewrite dr_add9 // ih.
   - move=> ki ih.
     have ->: 9 * (ki - 1) + r = (9 * ki + r) - 9 by ring.
-    (* symmetrisch argument via dr_add9 in omgekeerde richting *)
+    (* symmetric argument via dr_add9 in the reverse direction *)
     have hpos2 : 9 * ki + r > 0 by smt().
     have := dr_add9 (9 * ki + r - 9).
     smt(dr_add9).
 qed.
 
-(* dr(19 * n) = dr(n) voor n > 0: de generatoreigenschap van 19 *)
+(* dr(19 * n) = dr(n) for n > 0: the generator property of 19 *)
 lemma dr_19 (n : int) : n > 0 => dr (19 * n) = dr n.
 proof.
   move=> hn.
@@ -79,7 +79,7 @@ proof.
   by apply dr_9k_r.
 qed.
 
-(* dr(19 * n + 9 * m) = dr(n) voor n > 0 *)
+(* dr(19 * n + 9 * m) = dr(n) for n > 0 *)
 lemma dr_19A_9B (n m : int) : n > 0 => dr (19 * n + 9 * m) = dr n.
 proof.
   move=> hn.
@@ -88,17 +88,17 @@ proof.
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* Basisparameters                                                    *)
+(* Base parameters                                                    *)
 (* ----------------------------------------------------------------- *)
 op a0 (N : int) : int = N %% 9.
 op B0 (N : int) : int = (N - 19 * a0 N) %/ 9.
 op kmax (N : int) : int = (B0 N) %/ 19.
 
 (* ----------------------------------------------------------------- *)
-(* Hulplemma's over a0 en B0                                         *)
+(* Auxiliary lemmas about a0 and B0                                   *)
 (* ----------------------------------------------------------------- *)
 
-(* (N - 19Â·a0 N) is deelbaar door 9 *)
+(* (N - 19*a0 N) is divisible by 9 *)
 lemma N_minus_19a0_mod9 (N : int) : (N - 19 * (N %% 9)) %% 9 = 0.
 proof.
   have ->: N - 19 * (N %% 9) = N - (N %% 9) - 18 * (N %% 9) by ring.
@@ -109,7 +109,7 @@ proof.
   smt(modzDl).
 qed.
 
-(* a0 N ligt in [1, 8] voor N niet deelbaar door 9 *)
+(* a0 N lies in [1, 8] for N not divisible by 9 *)
 lemma a0_range (N : int) : N %% 9 <> 0 => 1 <= a0 N /\ a0 N <= 8.
 proof.
   move=> hmod.
@@ -117,10 +117,10 @@ proof.
   split; smt(modz_ge0 ltz_pmod).
 qed.
 
-(* De sleutelongelijkheid: 19 * a0 N <= N voor N > 143, N %% 9 <> 0  *)
-(* Bewijs via de euclidische deling: N = 9*q + r met q >= 16, r = a0 N *)
-(* Dan N - 19*r = 9*q + r - 19*r = 9*q - 18*r = 9*(q - 2*r) >= 0     *)
-(* want q >= 16 >= 2*8 >= 2*r                                          *)
+(* The key inequality: 19 * a0 N <= N for N > 143, N %% 9 <> 0        *)
+(* Proof via Euclidean division: N = 9*q + r with q >= 16, r = a0 N   *)
+(* Then N - 19*r = 9*q + r - 19*r = 9*q - 18*r = 9*(q - 2*r) >= 0     *)
+(* since q >= 16 >= 2*8 >= 2*r                                         *)
 lemma key_ineq (N : int) : N > 143 => N %% 9 <> 0 => 19 * (N %% 9) <= N.
 proof.
   move=> hN hmod.
@@ -134,7 +134,7 @@ proof.
   nlinarith.
 qed.
 
-(* B0 N >= 0 voor N > 143 en N %% 9 <> 0 *)
+(* B0 N >= 0 for N > 143 and N %% 9 <> 0 *)
 lemma B0_ge0 (N : int) : N > 143 => N %% 9 <> 0 => B0 N >= 0.
 proof.
   move=> hN hmod.
@@ -143,9 +143,9 @@ proof.
   have h_div  := N_minus_19a0_mod9 N.
   rewrite /a0 in h_ineq h_div *.
   apply divz_ge0.
-  - (* deeltal >= 0 *)
+  - (* dividend >= 0 *)
     linarith.
-  - (* deler > 0 *)
+  - (* divisor > 0 *)
     done.
 qed.
 
@@ -169,7 +169,7 @@ proof.
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* Lineaire invariant                                                  *)
+(* Linear invariant                                                    *)
 (* ----------------------------------------------------------------- *)
 lemma linear_invariant N k :
   N > 143 => N %% 9 <> 0 =>
@@ -182,7 +182,7 @@ proof.
   linarith.
 qed.
 
-(* B waarde blijft niet-negatief voor 0 <= k <= kmax *)
+(* The B value stays non-negative for 0 <= k <= kmax *)
 lemma B_ge0 (N k : int) :
   N > 143 => N %% 9 <> 0 =>
   0 <= k <= kmax N =>
@@ -199,7 +199,7 @@ proof.
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* Predikaat en uniciteit                                             *)
+(* Predicate and uniqueness                                            *)
 (* ----------------------------------------------------------------- *)
 pred is_rep (N A B : int) = 0 <= A /\ 0 <= B /\ 19*A + 9*B = N.
 
@@ -245,10 +245,10 @@ proof.
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* dr-eigenschappen voor representaties                               *)
+(* dr properties for representations                                  *)
 (* ----------------------------------------------------------------- *)
 
-(* dr(a0 N) = dr N voor N %% 9 <> 0 *)
+(* dr(a0 N) = dr N for N %% 9 <> 0 *)
 lemma dr_a0 (N : int) : N %% 9 <> 0 => dr (a0 N) = dr N.
 proof.
   move=> hmod.
@@ -264,21 +264,21 @@ proof.
   linarith.
 qed.
 
-(* dr(a0 N + 9*k) = dr N voor N %% 9 <> 0, k >= 0 *)
+(* dr(a0 N + 9*k) = dr N for N %% 9 <> 0, k >= 0 *)
 lemma dr_rep_A (N k : int) : N %% 9 <> 0 => k >= 0 => dr (a0 N + 9 * k) = dr N.
 proof.
   move=> hmod hk.
   have ha0 : a0 N > 0 by smt(a0_range).
   have hpos : a0 N + 9 * k > 0 by smt().
-  (* a0 N + 9*k = 9*k + a0 N, en dr(9*k + r) = dr(r) voor r > 0 *)
+  (* a0 N + 9*k = 9*k + a0 N, and dr(9*k + r) = dr(r) for r > 0 *)
   have ->: a0 N + 9 * k = 9 * k + a0 N by ring.
   rewrite dr_9k_r //.
   exact (dr_a0 N hmod).
 qed.
 
-(* dr(B0 N - 19*k) = dr(2 * dr N) wanneer k voldoet aan de driehoekseis *)
-(* De driehoekseis stelt: B0 N - 19*k â‰¡ target_r (mod 9)               *)
-(* waar target_r = dr(2 * dr N) %% 9                                     *)
+(* dr(B0 N - 19*k) = dr(2 * dr N) when k satisfies the triangle requirement *)
+(* The triangle requirement states: B0 N - 19*k â‰¡ target_r (mod 9)          *)
+(* where target_r = dr(2 * dr N) %% 9                                       *)
 lemma dr_triangle_B (N k : int) :
   N > 143 => N %% 9 <> 0 =>
   0 <= k <= kmax N =>
@@ -296,7 +296,7 @@ proof.
     have h2pos : 2 * (if N <= 0 then 0 else 1 + (N-1) %% 9) > 0 by smt().
     smt(modz_ge0 ltz_pmod).
   rewrite /dr htgt /=.
-  (* Beide zijden hebben dezelfde rest mod 9 en liggen in [1,9] *)
+  (* Both sides share the same remainder mod 9 and lie in [1,9] *)
   have lhs_range : 1 <= B0 N - 19*k /\ B0 N - 19*k <= 9 * (kmax N + 1).
     split; first by linarith.
     smt(B0_ge0 kmax_ge0).
@@ -308,7 +308,7 @@ proof.
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* Module voor representatiesampling                                  *)
+(* Module for representation sampling                                 *)
 (* ----------------------------------------------------------------- *)
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
@@ -336,58 +336,58 @@ module MRSRep = {
 }.
 
 (* ----------------------------------------------------------------- *)
-(* Hulplemma: sample_triangle geeft (0,0) niet terug als N > 143    *)
-(* en N %% 9 <> 0: er bestaat altijd een geldige k0 <= kmax         *)
+(* Auxiliary lemma: sample_triangle does not return (0,0) if N > 143 *)
+(* and N %% 9 <> 0: a valid k0 <= kmax always exists                  *)
 (* ----------------------------------------------------------------- *)
 lemma triangle_k0_le_kmax (N : int) :
   N > 143 => N %% 9 <> 0 =>
   (B0 N - dr (2 * dr N) %% 9) %% 9 <= kmax N.
 proof.
   move=> hN hmod.
-  (* k0 = (B0 N - target_r) %% 9, en 0 <= k0 <= 8 *)
-  (* kmax N >= 0, en we tonen kmax N >= k0          *)
-  (* B0 N >= 19 * kmax N (per definitie), dus        *)
-  (* kmax N >= 1 als B0 N >= 19, i.e. B0 N groot genoeg *)
+  (* k0 = (B0 N - target_r) %% 9, and 0 <= k0 <= 8 *)
+  (* kmax N >= 0, and we show kmax N >= k0          *)
+  (* B0 N >= 19 * kmax N (by definition), so         *)
+  (* kmax N >= 1 if B0 N >= 19, i.e. B0 N large enough *)
   have hB  := B0_ge0 N hN hmod.
   have hkm := kmax_ge0 N hN hmod.
   have k0_range : 0 <= (B0 N - dr (2 * dr N) %% 9) %% 9 /\
                   (B0 N - dr (2 * dr N) %% 9) %% 9 <= 8.
     split; by smt(modz_ge0 ltz_pmod).
-  (* Twee gevallen: kmax N >= 8 (triviaal) of kmax N < 8 *)
-  (* Als kmax N >= 8 dan k0 <= 8 <= kmax N *)
+  (* Two cases: kmax N >= 8 (trivial) or kmax N < 8 *)
+  (* If kmax N >= 8 then k0 <= 8 <= kmax N *)
   case (kmax N >= 8).
   - move=> hkm8; smt().
-  (* Als kmax N < 8 dan B0 N < 19*8 + 19 = 171, dus B0 N <= 170 *)
-  (* Dan kmax N = B0 N %/ 19. We tonen k0 <= kmax N              *)
-  (* door te laten zien dat (B0 N - target_r) %% 9 <= B0 N %/ 19 *)
+  (* If kmax N < 8 then B0 N < 19*8 + 19 = 171, so B0 N <= 170 *)
+  (* Then kmax N = B0 N %/ 19. We show k0 <= kmax N              *)
+  (* by showing that (B0 N - target_r) %% 9 <= B0 N %/ 19 *)
   - move=> hkm8.
     have hB_small : B0 N <= 8 * 19 + 18 by smt(B0_ge0).
-    (* target_r âˆˆ {1,..,9}, dus B0 N - target_r >= B0 N - 9 *)
+    (* target_r âˆˆ {1,..,9}, so B0 N - target_r >= B0 N - 9 *)
     (* k0 = (B0 N - target_r) %% 9 <= 8 <= kmax N ... *)
-    (* fijnere schatting: kmax N = B0 N %/ 19 >= (B0 N - 18) / 19 *)
-    (* k0 <= 8, en als kmax N >= 0 dan volstaat k0 <= B0 N %/ 19 *)
-    (* We gebruiken: k0 <= B0 N en B0 N %/ 19 >= k0 / 19 ... *)
-    (* Direct: als kmax N in [0,7] dan B0 N in [0, 7*19+18] *)
-    (* en target_r in [1,9], dus k0 = (B0 N - target_r) %% 9 *)
-    (* <= 8. En kmax N = B0 N %/ 19 >= 0.                   *)
-    (* Maar k0 kan 8 zijn en kmax N kan 0 zijn: check B0 N=0 *)
-    (* Als B0 N = 0 dan k0 = (-target_r) %% 9 = 9 - target_r *)
+    (* finer estimate: kmax N = B0 N %/ 19 >= (B0 N - 18) / 19 *)
+    (* k0 <= 8, and if kmax N >= 0 then k0 <= B0 N %/ 19 suffices *)
+    (* We use: k0 <= B0 N and B0 N %/ 19 >= k0 / 19 ... *)
+    (* Directly: if kmax N in [0,7] then B0 N in [0, 7*19+18] *)
+    (* and target_r in [1,9], so k0 = (B0 N - target_r) %% 9 *)
+    (* <= 8. And kmax N = B0 N %/ 19 >= 0.                   *)
+    (* But k0 could be 8 and kmax N could be 0: check B0 N=0 *)
+    (* If B0 N = 0 then k0 = (-target_r) %% 9 = 9 - target_r *)
     (* target_r = dr(2*dr N) %% 9.                           *)
     (* dr N âˆˆ [1,9], 2*dr N âˆˆ [2,18], dr(2*dr N) âˆˆ [1,9]   *)
     (* target_r = dr(2*dr N) %% 9 âˆˆ [0,8]                   *)
-    (* Als target_r = 0 dan 9|dr(2*dr N), dus dr(2*dr N)=9  *)
-    (* dan k0 = B0 N %% 9 = 0 <= 0 = kmax N âœ“               *)
-    (* Als target_r > 0 dan k0 = (0 - target_r) %% 9        *)
+    (* If target_r = 0 then 9|dr(2*dr N), so dr(2*dr N)=9  *)
+    (* then k0 = B0 N %% 9 = 0 <= 0 = kmax N âœ“               *)
+    (* If target_r > 0 then k0 = (0 - target_r) %% 9        *)
     (*   = 9 - target_r âˆˆ [1,8]                              *)
-    (* Maar kmax N = 0 %/ 19 = 0, dan k0 > kmax N            *)
-    (* In dat geval geeft sample_triangle (0,0) terug, wat   *)
-    (* correct is: er is geen geldige triangle-representatie  *)
-    (* Dit is de (0,0)-tak, niet het geval dat we hier bewijzen *)
+    (* But kmax N = 0 %/ 19 = 0, then k0 > kmax N            *)
+    (* In that case sample_triangle returns (0,0), which is  *)
+    (* correct: no valid triangle representation exists       *)
+    (* This is the (0,0) branch, not the case we prove here  *)
     smt(modz_ge0 ltz_pmod B0_ge0 kmax_ge0).
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* Correctheidslemma's                                                *)
+(* Correctness lemmas                                                  *)
 (* ----------------------------------------------------------------- *)
 
 lemma sample_basic_correct (N : int) :
@@ -402,7 +402,7 @@ proof.
   auto => />.
   move=> &m k hk_lo hk_hi.
   split.
-  - (* Lineaire vergelijking klopt *)
+  - (* The linear equation holds *)
     apply linear_invariant => //.
     smt(kmax_ge0).
   - (* dr(A) = dr(N) *)
@@ -434,12 +434,12 @@ proof.
   proc.
   auto => />.
   move=> &m.
-  (* Na de auto-stap hebben we de intermediaire variabelen *)
+  (* After the auto step we have the intermediate variables *)
   split.
-  - (* If-tak: k0 > kmax_val, geeft (0,0) terug *)
+  - (* If branch: k0 > kmax_val, returns (0,0) *)
     move=> hk0_gt.
     left; split => //.
-  - (* Else-tak: geldig paar *)
+  - (* Else branch: valid pair *)
     move=> hk0_le t ht_lo ht_hi.
     right.
     set k := (B0 N - dr (2 * dr N) %% 9) %% 9 + 9 * t.
@@ -454,15 +454,15 @@ proof.
     - (* dr(A) = dr(N) *)
       apply dr_rep_A => //; smt().
     - (* dr(B) = dr(2 * dr N) *)
-      (* B = B0 N - 19 * k, en k â‰¡ (B0 N - target_r) mod 9       *)
-      (* dus B â‰¡ B0 N - 19*k â‰¡ target_r (mod 9)                   *)
-      (* en target_r = dr(2 * dr N) %% 9                           *)
+      (* B = B0 N - 19 * k, and k â‰¡ (B0 N - target_r) mod 9       *)
+      (* so B â‰¡ B0 N - 19*k â‰¡ target_r (mod 9)                   *)
+      (* and target_r = dr(2 * dr N) %% 9                           *)
       have hB_pos : B0 N - 19 * k > 0.
         have hBge := B_ge0 N k hN hmod.
         smt(B_ge0 a0_range).
       apply dr_triangle_B => //.
       + smt().
-      + (* congruentie mod 9 *)
+      + (* congruence mod 9 *)
         have : (B0 N - 19 * k) %% 9 = (B0 N - 19 * ((B0 N - dr (2 * dr N) %% 9) %% 9 + 9*t)) %% 9.
           by done.
         rewrite /k.
