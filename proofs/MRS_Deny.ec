@@ -1,6 +1,6 @@
 (* ================================================================= *)
 (*  MRS_Deny.ec                                                       *)
-(*  Formele deniability: geen enkele adversary doet het beter dan 50% *)
+(*  Formal deniability: no adversary does better than 50%             *)
 (* ================================================================= *)
 
 require import MRS_Chain.
@@ -23,8 +23,8 @@ module DenyGame (A : Adversary) = {
 }.
 
 (* ----------------------------------------------------------------- *)
-(* Hulplemma: de twee ketens hebben identieke verdeling               *)
-(* Dit volgt direct uit build_equiv                                   *)
+(* Auxiliary lemma: the two chains have an identical distribution     *)
+(* This follows directly from build_equiv                             *)
 (* ----------------------------------------------------------------- *)
 lemma ch0_ch1_same_distr (N : int) (depth : int) (tri : int list) :
   N > 143 => N %% 9 <> 0 =>
@@ -38,44 +38,44 @@ proof.
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* Hoofdstelling: informatietheorische deniability                    *)
-(* Adv_DENY(A) = |Pr[b'=b] - 1/2| = 0 voor elke adversary A        *)
+(* Main theorem: information-theoretic deniability                    *)
+(* Adv_DENY(A) = |Pr[b'=b] - 1/2| = 0 for every adversary A         *)
 (* ----------------------------------------------------------------- *)
 lemma deny_advantage (A <: Adversary) (N : int) (depth : int) (tri : int list) :
   N > 143 => N %% 9 <> 0 =>
   Pr[DenyGame(A).main(N, depth, tri) @ &m : res] = 1%r / 2%r.
 proof.
   move=> hN hmod.
-  (* Strategie: toon dat de kansruimte over b uniform is en            *)
-  (* dat ch0 en ch1 identiek verdeeld zijn, zodat A geen informatie    *)
-  (* over b kan extraheren uit de aangeboden keten.                    *)
+  (* Strategy: show that the probability space over b is uniform and   *)
+  (* that ch0 and ch1 are identically distributed, so A cannot extract *)
+  (* any information about b from the chain it is given.                *)
   byphoare => //.
   proc.
 
-  (* Stap 1: sample b uniform â€” onafhankelijk van de ketens *)
+  (* Step 1: sample b uniformly â€” independent of the chains *)
   seq 3 : b (1%r/2%r) (1%r) (1%r/2%r) (0%r).
-  - (* b wordt uniform getrokken, ketens zijn onafhankelijk *)
+  - (* b is drawn uniformly, chains are independent *)
     call (build_equiv N depth tri hN hmod).
     call (build_equiv N depth tri hN hmod).
     rnd.
     auto.
 
-  - (* b = true tak *)
+  - (* b = true branch *)
     (* b' = A.guess(ch1), b = true *)
-    (* De kans dat b' = true is p = Pr[A.guess(ch1) = true] *)
-    (* Maar ch1 heeft dezelfde verdeling als ch0 *)
+    (* The probability that b' = true is p = Pr[A.guess(ch1) = true] *)
+    (* But ch1 has the same distribution as ch0 *)
     (* Pr[b' = b | b = true] = Pr[A.guess(ch1) = true] = p *)
     (* Pr[b' = b | b = false] = Pr[A.guess(ch0) = false] = 1 - p *)
-    (* Totaal: 1/2 * p + 1/2 * (1 - p) = 1/2 *)
+    (* Total: 1/2 * p + 1/2 * (1 - p) = 1/2 *)
     if => />.
-    (* ch1-tak *)
+    (* ch1 branch *)
     have key : forall (ch : int list),
       phoare [A.guess : arg = ch ==> true] = 1%r.
       move=> ch; proc *; auto.
     call (key ch1).
     auto.
 
-  - (* b = false tak â€” analoog *)
+  - (* b = false branch â€” analogous *)
     if => />.
     have key : forall (ch : int list),
       phoare [A.guess : arg = ch ==> true] = 1%r.
@@ -83,14 +83,14 @@ proof.
     call (key ch0).
     auto.
 
-  - (* Onmogelijke tak *)
+  - (* Impossible branch *)
     hoare; auto.
 
-  (* Stap 2: combineer via de distributie-gelijkheid van ch0 en ch1 *)
-  (* De kans is precies 1/2 want de adversary ziet een uniforme keten *)
+  (* Step 2: combine via the distributional equality of ch0 and ch1 *)
+  (* The probability is exactly 1/2 because the adversary sees a uniform chain *)
   byequiv => //.
   proc.
-  (* Koppel ch0{1} aan ch1{2} via de gelijke verdeling *)
+  (* Couple ch0{1} to ch1{2} via the equal distribution *)
   seq 2 2 : (ch0{1} = ch1{2} /\ ch1{1} = ch0{2} /\ ={b, tri, depth}).
   - call (ch0_ch1_same_distr N depth tri hN hmod).
     call (ch0_ch1_same_distr N depth tri hN hmod).
