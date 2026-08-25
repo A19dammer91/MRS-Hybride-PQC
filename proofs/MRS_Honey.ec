@@ -1,7 +1,7 @@
 (* ================================================================= *)
 (*  MRS_Honey.ec                                                      *)
-(*  Honey encryption laag van MRS-AUTH                                *)
-(*  IND-CPA veiligheid via game-hopping over RO en AEAD              *)
+(*  Honey encryption layer of MRS-AUTH                                *)
+(*  IND-CPA security via game-hopping over RO and AEAD                *)
 (* ================================================================= *)
 
 require import AllCore Int Real Distr List FSet SmtMap.
@@ -12,28 +12,28 @@ import IntOrder RealOrder.
 require import MRS_Core MRS_Chain.
 
 (* ----------------------------------------------------------------- *)
-(* Typesynoniemen                                                      *)
+(* Type synonyms                                                      *)
 (* ----------------------------------------------------------------- *)
-type key    = bytes.          (* 256-bit AES sleutel            *)
-type nonce  = bytes.          (* 96-bit GCM nonce               *)
-type plain  = bytes.          (* plaintext (ketenbytes)          *)
-type cipher = bytes.          (* ciphertext inclusief GCM-tag   *)
-type tag    = bytes.          (* 16-byte authenticatietag       *)
+type key    = bytes.          (* 256-bit AES key                *)
+type nonce  = bytes.          (* 96-bit GCM nonce                *)
+type plain  = bytes.          (* plaintext (chain bytes)          *)
+type cipher = bytes.          (* ciphertext including GCM tag    *)
+type tag    = bytes.          (* 16-byte authentication tag       *)
 
-(* Concrete bitlentes *)
-op key_len   : int = 32.   (* 256 bit = 32 byte *)
-op nonce_len : int = 12.   (*  96 bit = 12 byte *)
-op tag_len   : int = 16.   (* 128 bit = 16 byte *)
+(* Concrete bit lengths *)
+op key_len   : int = 32.   (* 256 bit = 32 bytes *)
+op nonce_len : int = 12.   (*  96 bit = 12 bytes *)
+op tag_len   : int = 16.   (* 128 bit = 16 bytes *)
 
 (* ----------------------------------------------------------------- *)
-(* Random Oracle interface voor HKDF                                  *)
+(* Random Oracle interface for HKDF                                   *)
 (* ----------------------------------------------------------------- *)
 module type HKDF_RO = {
   proc init() : unit
-  proc get(x : int list * int) : key   (* input: (keten, laagindex) *)
+  proc get(x : int list * int) : key   (* input: (chain, layer index) *)
 }.
 
-(* Standaard luie RO-instantie *)
+(* Standard lazy RO instance *)
 module RO : HKDF_RO = {
   var ro : (int list * int, key) fmap
 
@@ -57,7 +57,7 @@ module type AEAD = {
   proc decrypt(k : key, n : nonce, c : cipher) : plain option
 }.
 
-(* Correctheidseis voor AEAD: decrypt(encrypt(p)) = p *)
+(* Correctness requirement for AEAD: decrypt(encrypt(p)) = p *)
 axiom aead_correct (AE <: AEAD) (k : key) (n : nonce) (p : plain) :
   hoare [AE.encrypt : arg = (k,n,p) ==> true] =>
   hoare [AE.decrypt :
@@ -65,7 +65,7 @@ axiom aead_correct (AE <: AEAD) (k : key) (n : nonce) (p : plain) :
     res = Some p].
 
 (* ----------------------------------------------------------------- *)
-(* IND-CPA spel voor AEAD                                             *)
+(* IND-CPA game for AEAD                                              *)
 (* ----------------------------------------------------------------- *)
 module type AE_Adv = {
   proc choose() : plain * plain
@@ -85,23 +85,23 @@ module IND_CPA (A : AE_Adv, AE : AEAD) = {
   }
 }.
 
-(* De IND-CPA aanname: geen efficiÃ«nte adversary wint significant *)
-op negl : int -> real.    (* verwaarloosbare functie in veiligheidsparameter *)
-op Î»    : int.            (* veiligheidsparameter                            *)
+(* The IND-CPA assumption: no efficient adversary wins significantly *)
+op negl : int -> real.    (* negligible function in the security parameter *)
+op Î»    : int.            (* security parameter                            *)
 
 (* ----------------------------------------------------------------- *)
 (* Honey Encryption module                                            *)
 (* ----------------------------------------------------------------- *)
-(*  Voor elke keten ch wordt een sleutel afgeleid via RO.get(ch, i). *)
-(*  Daarna wordt de keten versleuteld met AES-256-GCM.               *)
-(*  De shuffle van de M ciphertexts verbergt de index van de echte.  *)
+(*  For each chain ch, a key is derived via RO.get(ch, i).           *)
+(*  The chain is then encrypted with AES-256-GCM.                    *)
+(*  Shuffling the M ciphertexts hides the index of the real one.     *)
 (* ----------------------------------------------------------------- *)
 
-op M : int = 5.   (* aantal honeywords: 1 echt + 4 alibi's *)
+op M : int = 5.   (* number of honeywords: 1 real + 4 alibis *)
 
 module HoneyEnc (RO : HKDF_RO, AE : AEAD) = {
 
-  (* Versleutel Ã©Ã©n keten *)
+  (* Encrypt a single chain *)
   proc enc_one(ch : int list, idx : int) : bytes = {
     var key, nonce, ct;
     key   <@ RO.get(ch, idx);
@@ -110,7 +110,7 @@ module HoneyEnc (RO : HKDF_RO, AE : AEAD) = {
     return nonce ++ ct;
   }
 
-  (* Versleutel de ware keten plus (M-1) alibi-ketens *)
+  (* Encrypt the true chain plus (M-1) alibi chains *)
   proc encrypt(N : int, depth : int, tri : int list) : bytes list = {
     var true_chain, alibis, i, blob, blobs, perm;
     true_chain <@ MRSChain.build(N, depth, tri);
@@ -122,7 +122,7 @@ module HoneyEnc (RO : HKDF_RO, AE : AEAD) = {
       alibis <- alibis ++ [alibi];
       i      <- i + 1;
     }
-    (* Versleutel alle M ketens *)
+    (* Encrypt all M chains *)
     blobs <- [];
     i     <- 0;
     blob  <@ enc_one(true_chain, 0);
@@ -132,13 +132,13 @@ module HoneyEnc (RO : HKDF_RO, AE : AEAD) = {
       blobs <- blobs ++ [blob];
       i     <- i + 1;
     }
-    (* Uniforme permutatie zodat de positie van de ware keten verborgen is *)
+    (* Uniform permutation so the position of the true chain is hidden *)
     perm  <$ duniform (perms M);
     return apply_perm perm blobs;
   }
 }.
 
-(* IND-CPA spel voor HoneyEnc *)
+(* IND-CPA game for HoneyEnc *)
 module type HAdversary = {
   proc choose(N : int, depth : int, tri : int list) : int list * int list
   proc guess(blobs : bytes list) : bool
@@ -147,12 +147,12 @@ module type HAdversary = {
 module Honey_IND_CPA (A : HAdversary, RO : HKDF_RO, AE : AEAD) = {
   proc main() : bool = {
     var N, depth, tri, ch0, ch1, b, b', blobs0, blobs1;
-    N     <- sample_N();          (* kies publieke parameter *)
+    N     <- sample_N();          (* choose the public parameter *)
     depth <- 3;
     tri   <- [1];
     (ch0, ch1) <@ A.choose(N, depth, tri);
     b     <$ {0,1};
-    (* Versleutel de door de adversary gekozen keten *)
+    (* Encrypt the chain chosen by the adversary *)
     blobs0 <@ HoneyEnc(RO, AE).encrypt(N, depth, tri);
     blobs1 <@ HoneyEnc(RO, AE).encrypt(N, depth, tri);
     b'    <@ A.guess(if b then blobs1 else blobs0);
@@ -162,47 +162,48 @@ module Honey_IND_CPA (A : HAdversary, RO : HKDF_RO, AE : AEAD) = {
 
 (* ================================================================= *)
 (*  section HoneyProof                                                *)
-(*  Drie-staps game-hopping bewijs van IND-CPA voor HoneyEnc         *)
+(*  Three-step game-hopping proof of IND-CPA for HoneyEnc            *)
 (* ================================================================= *)
 section HoneyProof.
 
   declare module RO <: HKDF_RO { }.
   declare module AE <: AEAD { }.
 
-  (* IND-CPA aanname voor het onderliggende AEAD-schema *)
+  (* IND-CPA assumption for the underlying AEAD scheme *)
   declare axiom aead_secure : forall (A <: AE_Adv),
     `| Pr[IND_CPA(A, AE).main() @ &m : res] - 1%r/2%r | <= negl(Î»).
 
   (* ============================================================== *)
-  (*  Game 0: het echte Honey_IND_CPA spel                          *)
-  (*  De sleutel wordt afgeleid via RO.get                          *)
+  (*  Game 0: the real Honey_IND_CPA game                           *)
+  (*  The key is derived via RO.get                                *)
   (* ============================================================== *)
 
   (*
-   * Game 1: vervang RO.get(ch, i) door directe uniforme sampling
+   * Game 1: replace RO.get(ch, i) with direct uniform sampling
    *
-   * Redenering:
-   *   In het echte spel leidt RO.get(ch, i) een sleutel af als:
+   * Reasoning:
+   *   In the real game, RO.get(ch, i) derives a key as follows:
    *     if (ch,i) \notin ro then k <$ uniform; ro[(ch,i)] <- k
    *     return ro[(ch,i)]
-   *   Dit is per definitie identiek aan een verse uniforme sampling,
-   *   zolang (ch, i) nog niet eerder werd opgezocht.
+   *   This is by definition identical to a fresh uniform sample,
+   *   as long as (ch, i) has not been looked up before.
    *
-   *   Omdat elke keten (true_chain en elke alibi) een vers, onafhankelijk
-   *   resultaat is van MRSChain.build, en omdat de indexen 0..M-1 uniek zijn,
-   *   worden de sleutels (ch_j, j) voor j = 0..M-1 nooit twee keer opgezocht.
-   *   De RO-waarden zijn dus identiek verdeeld als verse uniforme samples.
+   *   Because every chain (true_chain and every alibi) is a fresh,
+   *   independent result of MRSChain.build, and because the indices
+   *   0..M-1 are unique, the keys (ch_j, j) for j = 0..M-1 are never
+   *   looked up twice. The RO values are therefore identically
+   *   distributed to fresh uniform samples.
    *
-   *   Formeel: we gebruiken het PROM-framework (Programmable Random Oracle
-   *   Model). De lazy RO geeft bij een verse query een uniforme waarde terug,
-   *   onafhankelijk van alle eerdere queries. Vervangen door directe sampling
-   *   geeft een identieke kansverdeling.
+   *   Formally: we use the PROM framework (Programmable Random Oracle
+   *   Model). The lazy RO returns a uniform value on a fresh query,
+   *   independent of all earlier queries. Replacing it with direct
+   *   sampling gives an identical probability distribution.
    *)
 
   local module Game1 = {
     proc enc_one(ch : int list, idx : int) : bytes = {
       var key, nonce, ct;
-      key   <$ dlist dbits key_len;   (* direct uniform, geen RO *)
+      key   <$ dlist dbits key_len;   (* directly uniform, no RO *)
       nonce <$ dlist dbits nonce_len;
       ct    <@ AE.encrypt(key, nonce, chain_to_bytes ch);
       return nonce ++ ct;
@@ -234,35 +235,36 @@ section HoneyProof.
   }.
 
   (* ----------------------------------------------------------------- *)
-  (* Hulplemma: alle (ch_j, j)-paren zijn vers bij eerste aanroep      *)
-  (* Dit is de technische kern die de RO-vervanging rechtvaardigt       *)
+  (* Auxiliary lemma: all (ch_j, j) pairs are fresh on first invocation *)
+  (* This is the technical core that justifies the RO replacement       *)
   (* ----------------------------------------------------------------- *)
   local lemma ro_queries_fresh (N : int) (depth : int) (tri : int list) :
     N > 143 => N %% 9 <> 0 =>
     hoare [HoneyEnc(RO, AE).encrypt :
       arg = (N, depth, tri) /\ RO.ro = empty ==>
-      (* Na afloop: alle M queries waren vers *)
+      (* Afterward: all M queries were fresh *)
       forall i j, 0 <= i < M => 0 <= j < M => i <> j =>
         fst (nth ([], 0) queries i) <> fst (nth ([], 0) queries j)].
   proof.
     move=> hN hmod.
     proc.
-    (* De ketens zijn onafhankelijke samples uit MRSChain.build.       *)
-    (* Omdat M eindig is en de ketens met hoge kans verschillend zijn, *)
-    (* zijn alle (ch_j, j)-sleutelparen uniek.                         *)
-    (* Formeel volgt dit uit het feit dat de indexen j per constructie *)
-    (* uniek zijn: de keten (ch_j, j) verschilt al op de j-component.  *)
+    (* The chains are independent samples from MRSChain.build.        *)
+    (* Because M is finite and the chains are, with high probability, *)
+    (* different, all (ch_j, j) key pairs are unique.                 *)
+    (* Formally this follows from the fact that the indices j are, by *)
+    (* construction, unique: the pair (ch_j, j) already differs on    *)
+    (* the j component.                                                *)
     auto => />.
-    (* Indexen 0..M-1 zijn per constructie uniek *)
+    (* Indices 0..M-1 are unique by construction *)
     move=> i j hi hj hij.
-    (* De tweede component van het querypaar is de index i resp. j *)
-    (* Omdat i <> j, zijn de paren (ch_i, i) en (ch_j, j) sowieso *)
-    (* verschillend op hun tweede component.                        *)
+    (* The second component of the query pair is the index i resp. j *)
+    (* Because i <> j, the pairs (ch_i, i) and (ch_j, j) always       *)
+    (* differ on their second component.                              *)
     smt().
   qed.
 
   (* ----------------------------------------------------------------- *)
-  (* Stap 1: Game0 â‰¡ Game1 (RO-vervanging)                            *)
+  (* Step 1: Game0 â‰¡ Game1 (RO replacement)                            *)
   (* ----------------------------------------------------------------- *)
   lemma game0_game1_equiv :
     N > 143 => N %% 9 <> 0 =>
@@ -272,24 +274,23 @@ section HoneyProof.
     move=> hN hmod.
     proc.
     (*
-     * Bewijs via inductie over de M enc_one-aanroepen.
+     * Proof via induction over the M enc_one invocations.
      *
-     * Invariant: voor elke aanroep enc_one(ch, i) geldt dat
-     * (ch, i) \notin RO.ro. Daardoor levert RO.get(ch, i) een
-     * verse uniforme sleutel op, identiek aan de directe sampling
-     * in Game1.
+     * Invariant: for every invocation enc_one(ch, i), (ch, i) \notin
+     * RO.ro holds. As a result, RO.get(ch, i) yields a fresh uniform
+     * key, identical to the direct sampling in Game1.
      *
-     * De invariant wordt geÃ¯nitialiseerd door RO.ro = empty.
-     * Na elke aanroep wordt (ch, i) ingevoegd; omdat de indexen
-     * 0..M-1 strikt toenemen, geldt de invariant voor elke
-     * volgende aanroep.
+     * The invariant is initialized by RO.ro = empty. After each
+     * invocation, (ch, i) is inserted; because the indices 0..M-1
+     * strictly increase, the invariant holds for every subsequent
+     * invocation.
      *)
-    (* Synchroniseer de keten-generatie: beide kanten gebruiken *)
-    (* MRSChain.build met dezelfde parameters.                  *)
+    (* Synchronize the chain generation: both sides use *)
+    (* MRSChain.build with the same parameters.          *)
     seq 1 1 : (={true_chain, N, depth, tri} /\ RO.ro{1} = empty).
     - call (build_equiv (arg{1}.`1) (arg{1}.`2) (arg{1}.`3) hN hmod).
       auto.
-    (* Synchroniseer de alibi-lus *)
+    (* Synchronize the alibi loop *)
     while (={alibis, i, N, depth, tri} /\
            (forall j, 0 <= j < i{1} =>
              (nth [] alibis{1} j, j + 1) \notin RO.ro{1})).
@@ -298,28 +299,28 @@ section HoneyProof.
         auto.
       + auto => />; smt(mem_empty).
     - auto => />; move=> *; smt(mem_empty).
-    (* Synchroniseer de encryptielus *)
-    (* Voor elke index i: RO.get(ch, i) samples uniform omdat *)
-    (* (ch, i) nog niet in ro zit (invariant).                *)
+    (* Synchronize the encryption loop *)
+    (* For every index i: RO.get(ch, i) samples uniformly because *)
+    (* (ch, i) is not yet in ro (invariant).                       *)
     seq 3 3 : (={blobs, i, true_chain, alibis} /\
                (forall j, 0 <= j <= i{1} =>
                  (nth [] (true_chain{1} :: alibis{1}) j, j) \in RO.ro{1})).
-    - (* enc_one voor de ware keten (index 0) *)
+    - (* enc_one for the true chain (index 0) *)
       inline HoneyEnc(RO, AE).enc_one Game1.enc_one.
-      (* RO.get(true_chain, 0): vers want ro = empty *)
+      (* RO.get(true_chain, 0): fresh because ro = empty *)
       seq 1 1 : (key{1} = key{2} /\ ={true_chain, alibis}).
-      + (* RO.get geeft uniforme waarde, identiek aan directe sampling *)
+      + (* RO.get returns a uniform value, identical to direct sampling *)
         inline RO.get.
         auto => />.
         (* (true_chain, 0) \notin empty *)
         rewrite mem_empty /=.
         smt(dlist_ll).
-      + (* Rest van enc_one is identiek *)
+      + (* The rest of enc_one is identical *)
         seq 1 1 : (={nonce, key, true_chain, alibis}).
         * rnd; auto.
         * call (: ={arg} ==> ={res}); first by proc; auto.
           auto.
-    (* Encryptielus voor alibi's (indices 1..M-1) *)
+    (* Encryption loop for alibis (indices 1..M-1) *)
     while (={blobs, i, alibis, true_chain} /\
            i{1} < M /\
            (forall j, 0 <= j <= i{1} =>
@@ -328,41 +329,41 @@ section HoneyProof.
       seq 1 1 : (key{1} = key{2} /\ ={blobs, i, alibis, true_chain}).
       + inline RO.get.
         auto => />.
-        (* (alibi_i, i+1) \notin ro: volgt uit de invariant *)
+        (* (alibi_i, i+1) \notin ro: follows from the invariant *)
         move=> &1 &2 hinv hi.
         have hfresh : (nth [] alibis{1} i{1}, i{1} + 1) \notin RO.ro{1}.
-          (* De index i+1 is nog niet eerder gebruikt: *)
-          (* alle eerdere queries hadden index <= i    *)
+          (* The index i+1 has not been used before: *)
+          (* all earlier queries had index <= i        *)
           smt(hinv).
         rewrite hfresh /=; smt(dlist_ll).
       + seq 1 1 : (={nonce, key, blobs, i, alibis, true_chain}).
         * rnd; auto.
         * call (: ={arg} ==> ={res}); first by proc; auto.
           auto => />; smt().
-    (* Permutatie is identiek in beide spelen *)
+    (* The permutation is identical in both games *)
     - rnd; auto.
   qed.
 
   (* ============================================================== *)
-  (*  Game 2: vervang AE.encrypt door uniforme random ciphertext    *)
+  (*  Game 2: replace AE.encrypt with a uniform random ciphertext   *)
   (*                                                                *)
-  (*  Redenering:                                                   *)
-  (*    In Game1 worden M sleutels uniform gesampled en M           *)
-  (*    ciphertexts berekend via AE.encrypt(k_i, n_i, plain_i).    *)
-  (*    Elke encryptie is onafhankelijk omdat de sleutels vers en   *)
-  (*    uniform zijn.                                               *)
+  (*  Reasoning:                                                    *)
+  (*    In Game1, M keys are sampled uniformly and M                *)
+  (*    ciphertexts are computed via AE.encrypt(k_i, n_i, plain_i).  *)
+  (*    Every encryption is independent because the keys are fresh  *)
+  (*    and uniform.                                                 *)
   (*                                                                *)
-  (*    Elke individuele encryptie (k_i, n_i, plain_i) -> c_i is   *)
-  (*    ononderscheidbaar van (k_i, n_i, random) door de IND-CPA   *)
-  (*    veiligheid van AE. We passen dit M keer toe via een hybride *)
-  (*    argument over de M posities.                                *)
+  (*    Every individual encryption (k_i, n_i, plain_i) -> c_i is    *)
+  (*    indistinguishable from (k_i, n_i, random) by the IND-CPA     *)
+  (*    security of AE. We apply this M times via a hybrid argument  *)
+  (*    over the M positions.                                        *)
   (* ============================================================== *)
 
   local module Game2 = {
     proc enc_one(ch : int list, idx : int) : bytes = {
       var nonce, ct;
       nonce <$ dlist dbits nonce_len;
-      ct    <$ dlist dbits (chain_byte_len ch + tag_len);  (* volledig random *)
+      ct    <$ dlist dbits (chain_byte_len ch + tag_len);  (* fully random *)
       return nonce ++ ct;
     }
 
@@ -392,17 +393,17 @@ section HoneyProof.
   }.
 
   (* ----------------------------------------------------------------- *)
-  (* Hulpmodule: reductie van Game1->Game2 naar IND-CPA van AE         *)
+  (* Auxiliary module: reduction from Game1->Game2 to IND-CPA of AE     *)
   (* ----------------------------------------------------------------- *)
   (*
-   * Voor elke positie j âˆˆ {0,..,M-1} bouwen we een hybride spel H_j:
-   *   - Posities 0..j-1: random ciphertext (Game2-stijl)
-   *   - Positie j:       AE.encrypt met echte plaintext (Game1-stijl)
-   *   - Posities j+1..M-1: AE.encrypt met echte plaintext (Game1-stijl)
+   * For every position j âˆˆ {0,..,M-1} we build a hybrid game H_j:
+   *   - Positions 0..j-1: random ciphertext (Game2 style)
+   *   - Position j:       AE.encrypt with the real plaintext (Game1 style)
+   *   - Positions j+1..M-1: AE.encrypt with the real plaintext (Game1 style)
    *
    * H_0 = Game1, H_M = Game2.
-   * Het verschil |Pr[H_j] - Pr[H_{j+1}]| leidt tot een IND-CPA adversary
-   * tegen AE die de j-de encryptie aanvalt.
+   * The difference |Pr[H_j] - Pr[H_{j+1}]| yields an IND-CPA adversary
+   * against AE that attacks the j-th encryption.
    *)
 
   local module AE_Reduction (A : HAdversary, j : int) : AE_Adv = {
@@ -410,7 +411,7 @@ section HoneyProof.
     var saved_b     : bool
 
     proc choose() : plain * plain = {
-      (* Bouw de ketens op, sla ze op, geef de j-de plaintext terug *)
+      (* Build the chains, store them, return the j-th plaintext *)
       var N, depth, tri, true_chain, alibis, i, alibi;
       N     <- sample_N();
       depth <- 3;
@@ -423,7 +424,7 @@ section HoneyProof.
         alibis <- alibis ++ [alibi];
         i      <- i + 1;
       }
-      (* Versleutel posities 0..j-1 met random ct (Game2-stijl) *)
+      (* Encrypt positions 0..j-1 with random ct (Game2 style) *)
       saved_blobs <- [];
       i <- 0;
       while (i < j) {
@@ -433,19 +434,19 @@ section HoneyProof.
         saved_blobs <- saved_blobs ++ [nonce ++ ct];
         i <- i + 1;
       }
-      (* Versleutel posities j+1..M-1 met AE (Game1-stijl) â€” later *)
-      (* Geef de twee plaintexts voor positie j aan de challenger    *)
-      (* p0 = plaintext van j-de keten, p1 = random bytes van zelfde lengte *)
+      (* Encrypt positions j+1..M-1 with AE (Game1 style) â€” later *)
+      (* Give the two plaintexts for position j to the challenger  *)
+      (* p0 = plaintext of the j-th chain, p1 = random bytes of the same length *)
       return (chain_to_bytes (nth [] (true_chain :: alibis) j),
               dlist dbits (chain_byte_len (nth [] (true_chain :: alibis) j)));
     }
 
     proc guess(c : cipher) : bool = {
-      (* c is de encryptie van p_b voor positie j *)
-      (* Voeg c toe op positie j, versleutel de rest *)
+      (* c is the encryption of p_b for position j *)
+      (* Insert c at position j, encrypt the rest *)
       var blob, blobs, perm, b';
       saved_blobs <- saved_blobs ++ [c];
-      (* Versleutel posities j+1..M-1 met verse sleutels *)
+      (* Encrypt positions j+1..M-1 with fresh keys *)
       var i, k, nonce, ct;
       i <- j + 1;
       while (i < M) {
@@ -463,26 +464,26 @@ section HoneyProof.
   }.
 
   (* ----------------------------------------------------------------- *)
-  (* Game1 en Game2 zijn ononderscheidbaar via M IND-CPA reducties     *)
+  (* Game1 and Game2 are indistinguishable via M IND-CPA reductions     *)
   (* ----------------------------------------------------------------- *)
   local lemma game1_game2_indist (A <: HAdversary) :
     `| Pr[Game1.encrypt(N, depth, tri) @ &m : res] -
        Pr[Game2.encrypt(N, depth, tri) @ &m : res] | <= M%r * negl(Î»).
   proof.
     (*
-     * Hybride argument over M posities.
+     * Hybrid argument over M positions.
      *
-     * Voor elke j âˆˆ {0,..,M-1} definieer H_j als het spel waarbij
-     * posities 0..j-1 random zijn en j..M-1 echte encrypties zijn.
+     * For every j âˆˆ {0,..,M-1} define H_j as the game where
+     * positions 0..j-1 are random and j..M-1 are real encryptions.
      *
-     * H_0 = Game1 (alles echt).
-     * H_M = Game2 (alles random).
+     * H_0 = Game1 (everything real).
+     * H_M = Game2 (everything random).
      *
-     * Het verschil tussen H_j en H_{j+1} is dat positie j verandert
-     * van een echte naar een random encryptie. Dit onderscheid levert
-     * een IND-CPA adversary op AE.
+     * The difference between H_j and H_{j+1} is that position j
+     * changes from a real to a random encryption. Distinguishing
+     * this yields an IND-CPA adversary against AE.
      *
-     * Driehoeksongelijkheid:
+     * Triangle inequality:
      *   |Pr[Game1] - Pr[Game2]|
      *   <= sum_{j=0}^{M-1} |Pr[H_j] - Pr[H_{j+1}]|
      *   <= M * max_j |Pr[H_j] - Pr[H_{j+1}]|
@@ -491,17 +492,17 @@ section HoneyProof.
     have step : forall j, 0 <= j < M =>
       `| Pr[H_j.main() @ &m : res] - Pr[H_{j+1}.main() @ &m : res] | <= negl(Î»).
     - move=> j hj.
-      (* Reduceer naar IND-CPA van AE via AE_Reduction *)
+      (* Reduce to IND-CPA of AE via AE_Reduction *)
       have := aead_secure (AE_Reduction(A, j)).
-      (* De IND-CPA adversary simuleert exact het verschil H_j vs H_{j+1} *)
-      (* bij positie j: als b=0 krijgt hij de echte ct (H_j-stijl),       *)
-      (* als b=1 krijgt hij een random ct (H_{j+1}-stijl).                *)
-      (* Formele koppeling via byequiv *)
+      (* The IND-CPA adversary simulates exactly the difference H_j vs *)
+      (* H_{j+1} at position j: if b=0 it receives the real ct         *)
+      (* (H_j style), if b=1 it receives a random ct (H_{j+1} style).  *)
+      (* Formal coupling via byequiv *)
       byequiv => //.
       proc.
-      (* ... koppelingsargument voor positie j ... *)
+      (* ... coupling argument for position j ... *)
       smt(aead_secure).
-    (* Driehoeksongelijkheid over j = 0..M-1 *)
+    (* Triangle inequality over j = 0..M-1 *)
     have tri_ineq :
       `| Pr[Game1.encrypt @ &m : res] - Pr[Game2.encrypt @ &m : res] |
       <= bigi predT (fun j => `| Pr[H_j @ &m : res] - Pr[H_{j+1} @ &m : res] |) 0 M.
@@ -516,184 +517,110 @@ section HoneyProof.
   qed.
 
   (* ================================================================= *)
-  (*  Stap 3: Game2 geeft uniforme output, onafhankelijk van b         *)
+  (*  Step 3: Game2 yields uniform output, independent of b            *)
   (*                                                                   *)
-  (*  In Game2 worden alle M ciphertexts vervangen door uniforme       *)
-  (*  random bytes. De permutatie verdeelt ze uniform over M posities. *)
-  (*  De adversary ziet M identiek verdeelde blobs; b is volledig      *)
-  (*  verborgen en het winnaarskans is precies 1/2.                    *)
+  (*  In Game2, all M ciphertexts are replaced by uniform random       *)
+  (*  bytes. The permutation distributes them uniformly over M         *)
+  (*  positions. The adversary sees M identically distributed blobs;   *)
+  (*  b is fully hidden and the winning probability is exactly 1/2.    *)
   (* ================================================================= *)
   local lemma game2_uniform (A <: HAdversary) :
     Pr[Honey_IND_CPA_Game2(A).main() @ &m : res] = 1%r / 2%r.
   proof.
     (*
-     * In Game2 zijn alle blobs uniforme random bytes van de juiste lengte.
-     * De permutatie is onafhankelijk van b.
-     * De adversary's output b' is dus onafhankelijk van b.
+     * In Game2 all blobs are uniform random bytes of the correct length.
+     * The permutation is independent of b.
+     * The adversary's output b' is therefore independent of b.
      * Pr[b' = b] = Pr[b' = 0] * Pr[b = 0] + Pr[b' = 1] * Pr[b = 1]
-     *            = p * 1/2 + (1-p) * 1/2  (voor willekeurige p)
+     *            = p * 1/2 + (1-p) * 1/2  (for arbitrary p)
      *            = 1/2.
      *)
     byphoare => //.
     proc.
-    (* b wordt uniform gesampled, onafhankelijk van alles *)
+    (* b is sampled uniformly, independent of everything else *)
     seq 1 : b (1%r/2%r) (1%r) (1%r/2%r) (0%r).
     - rnd; auto.
-    - (* b = true: b' is een functie van uniforme blobs, onafhankelijk van b *)
-      (* Pr[b' = true | b = true] = p voor zekere p *)
+    - (* b = true: b' is a function of uniform blobs, independent of b *)
+      (* Pr[b' = true | b = true] = p for some p *)
       wp.
-      (* Alle blobs zijn uniform: *)
-      (* blobs1 en blobs0 zijn identiek verdeeld                       *)
-      (* Dus b' <@ A.guess(blobs1) heeft dezelfde verdeling als        *)
-      (* b' <@ A.guess(blobs0)                                         *)
-      (* Pr[b'=true] + Pr[b'=false] = 1, ongeacht welke blobs gegeven *)
+      (* All blobs are uniform: *)
+      (* blobs1 and blobs0 are identically distributed                *)
+      (* So b' <@ A.guess(blobs1) has the same distribution as         *)
+      (* b' <@ A.guess(blobs0)                                          *)
+      (* Pr[b'=true] + Pr[b'=false] = 1, regardless of which blobs given *)
       call (: true ==> true); first by proc; auto.
       auto; smt(mu_bounded).
-    - (* b = false: analoog *)
+    - (* b = false: analogous *)
       wp.
       call (: true ==> true); first by proc; auto.
       auto; smt(mu_bounded).
-    - (* onmogelijke tak *)
+    - (* impossible branch *)
       hoare; auto.
-    (* Combineer: 1/2 * 1 + 1/2 * 1 = 1, gewogen kans = 1/2 *)
-    (* Meer precies: laat p = Pr[A.guess(blobs) = true].      *)
+    (* Combine: 1/2 * 1 + 1/2 * 1 = 1, weighted probability = 1/2 *)
+    (* More precisely: let p = Pr[A.guess(blobs) = true].       *)
     (* Pr[b' = b] = 1/2 * Pr[b'=true|b=true]                 *)
     (*            + 1/2 * Pr[b'=false|b=false]                *)
     (*            = 1/2 * p + 1/2 * (1 - p) = 1/2.           *)
     byequiv => //.
     proc.
-    (* Koppel de twee spelen: in beide is blobs uniform *)
+    (* Couple the two games: blobs are uniform in both *)
     seq 3 3 : (={b} /\ blobs0{1} =d blobs1{2} /\ blobs1{1} =d blobs0{2}).
-    - (* Beide encrypt-aanroepen geven uniform random output in Game2 *)
+    - (* Both encrypt calls yield uniformly random output in Game2 *)
       call (: true ==> res =d uniform_blobs); first by proc; auto; smt(dlist_ll).
       call (: true ==> res =d uniform_blobs); first by proc; auto; smt(dlist_ll).
       rnd; auto.
-    (* Als blobs uniform zijn, is de guess-kans p ongeacht b *)
+    (* If blobs are uniform, the guessing probability is p regardless of b *)
     if => />.
     - call (: ={arg} ==> true); auto.
     - call (: ={arg} ==> true); auto.
   qed.
 
   (* ================================================================= *)
-  (*  Hoofdstelling: IND-CPA veiligheid van HoneyEnc                  *)
+  (*  Main theorem: IND-CPA security of HoneyEnc                      *)
   (* ================================================================= *)
   (*
-   * Bewijs:
+   * Proof:
    *   |Pr[Game0] - 1/2|
    *   = |Pr[Game0] - Pr[Game2] + Pr[Game2] - 1/2|
    *   <= |Pr[Game0] - Pr[Game2]| + |Pr[Game2] - 1/2|
    *   = |Pr[Game0] - Pr[Game1]| + |Pr[Game1] - Pr[Game2]| + 0
    *   <= 0 + M * negl(Î»)
    *   = M * negl(Î»)
-   *   = negl(Î»)      (want M constant)
+   *   = negl(Î»)      (since M is constant)
    *)
   lemma honey_ind_cpa (A <: HAdversary) :
     `| Pr[Honey_IND_CPA(A, RO, AE).main() @ &m : res] - 1%r/2%r | <= negl(Î»).
   proof.
-    (* Stap 1: Game0 ~ Game1 via RO-vervanging (exacte gelijkheid) *)
+    (* Step 1: Game0 ~ Game1 via RO replacement (exact equality) *)
     have game0_eq_game1 :
       Pr[Honey_IND_CPA(A, RO, AE).main() @ &m : res] =
       Pr[Honey_IND_CPA_Game1(A, AE).main() @ &m : res].
     - byequiv => //.
       proc.
-      (* Koppel via game0_game1_equiv *)
+      (* Couple via game0_game1_equiv *)
       call (: true).
       call (game0_game1_equiv hN hmod).
       auto.
     rewrite game0_eq_game1.
 
-    (* Stap 2: |Game1 - Game2| <= M * negl via IND-CPA van AE *)
+    (* Step 2: |Game1 - Game2| <= M * negl via IND-CPA of AE *)
     have game1_game2 :
       `| Pr[Honey_IND_CPA_Game1(A, AE).main() @ &m : res] -
          Pr[Honey_IND_CPA_Game2(A).main() @ &m : res] | <= M%r * negl(Î»).
     - apply game1_game2_indist.
 
-    (* Stap 3: Pr[Game2] = 1/2 *)
+    (* Step 3: Pr[Game2] = 1/2 *)
     have game2_half :
       Pr[Honey_IND_CPA_Game2(A).main() @ &m : res] = 1%r / 2%r.
     - apply game2_uniform.
 
-    (* Combineer via driehoeksongelijkheid *)
+    (* Combine via the triangle inequality *)
     rewrite game2_half in game1_game2.
     apply (ler_trans (M%r * negl(Î»))).
     - apply (ler_trans _  _ _ (ler_abs_sub _ _)).
       linarith [game1_game2].
-    - (* M * negl(Î») = negl(Î») want M constant *)
-      (* In de standaarddefinitie van negl: c * negl = negl voor constante c *)
-      apply negl_const_mul.
-      smt().
-  qed.
-
-end section HoneyProof.
-Ll auto.
-      auto; smt(mu_bounded).
-    - (* onmogelijke tak *)
-      hoare; auto.
-    (* Combineer: 1/2 * 1 + 1/2 * 1 = 1, gewogen kans = 1/2 *)
-    (* Meer precies: laat p = Pr[A.guess(blobs) = true].      *)
-    (* Pr[b' = b] = 1/2 * Pr[b'=true|b=true]                 *)
-    (*            + 1/2 * Pr[b'=false|b=false]                *)
-    (*            = 1/2 * p + 1/2 * (1 - p) = 1/2.           *)
-    byequiv => //.
-    proc.
-    (* Koppel de twee spelen: in beide is blobs uniform *)
-    seq 3 3 : (={b} /\ blobs0{1} =d blobs1{2} /\ blobs1{1} =d blobs0{2}).
-    - (* Beide encrypt-aanroepen geven uniform random output in Game2 *)
-      call (: true ==> res =d uniform_blobs); first by proc; auto; smt(dlist_ll).
-      call (: true ==> res =d uniform_blobs); first by proc; auto; smt(dlist_ll).
-      rnd; auto.
-    (* Als blobs uniform zijn, is de guess-kans p ongeacht b *)
-    if => />.
-    - call (: ={arg} ==> true); auto.
-    - call (: ={arg} ==> true); auto.
-  qed.
-
-  (* ================================================================= *)
-  (*  Hoofdstelling: IND-CPA veiligheid van HoneyEnc                  *)
-  (* ================================================================= *)
-  (*
-   * Bewijs:
-   *   |Pr[Game0] - 1/2|
-   *   = |Pr[Game0] - Pr[Game2] + Pr[Game2] - 1/2|
-   *   <= |Pr[Game0] - Pr[Game2]| + |Pr[Game2] - 1/2|
-   *   = |Pr[Game0] - Pr[Game1]| + |Pr[Game1] - Pr[Game2]| + 0
-   *   <= 0 + M * negl(Î»)
-   *   = M * negl(Î»)
-   *   = negl(Î»)      (want M constant)
-   *)
-  lemma honey_ind_cpa (A <: HAdversary) :
-    `| Pr[Honey_IND_CPA(A, RO, AE).main() @ &m : res] - 1%r/2%r | <= negl(Î»).
-  proof.
-    (* Stap 1: Game0 ~ Game1 via RO-vervanging (exacte gelijkheid) *)
-    have game0_eq_game1 :
-      Pr[Honey_IND_CPA(A, RO, AE).main() @ &m : res] =
-      Pr[Honey_IND_CPA_Game1(A, AE).main() @ &m : res].
-    - byequiv => //.
-      proc.
-      (* Koppel via game0_game1_equiv *)
-      call (: true).
-      call (game0_game1_equiv hN hmod).
-      auto.
-    rewrite game0_eq_game1.
-
-    (* Stap 2: |Game1 - Game2| <= M * negl via IND-CPA van AE *)
-    have game1_game2 :
-      `| Pr[Honey_IND_CPA_Game1(A, AE).main() @ &m : res] -
-         Pr[Honey_IND_CPA_Game2(A).main() @ &m : res] | <= M%r * negl(Î»).
-    - apply game1_game2_indist.
-
-    (* Stap 3: Pr[Game2] = 1/2 *)
-    have game2_half :
-      Pr[Honey_IND_CPA_Game2(A).main() @ &m : res] = 1%r / 2%r.
-    - apply game2_uniform.
-
-    (* Combineer via driehoeksongelijkheid *)
-    rewrite game2_half in game1_game2.
-    apply (ler_trans (M%r * negl(Î»))).
-    - apply (ler_trans _  _ _ (ler_abs_sub _ _)).
-      linarith [game1_game2].
-    - (* M * negl(Î») = negl(Î») want M constant *)
-      (* In de standaarddefinitie van negl: c * negl = negl voor constante c *)
+    - (* M * negl(Î») = negl(Î») since M is constant *)
+      (* By the standard definition of negl: c * negl = negl for constant c *)
       apply negl_const_mul.
       smt().
   qed.
