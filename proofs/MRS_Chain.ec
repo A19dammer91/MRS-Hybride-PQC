@@ -1,6 +1,6 @@
 (* ================================================================= *)
 (*  MRS_Chain.ec                                                      *)
-(*  Ketenconstructie en verificatie                                   *)
+(*  Chain construction and verification                               *)
 (* ================================================================= *)
 
 require import MRS_Core.
@@ -45,7 +45,7 @@ module MRSChain = {
 }.
 
 (* ----------------------------------------------------------------- *)
-(* Lusinvariant voor build                                            *)
+(* Loop invariant for build                                           *)
 (* ----------------------------------------------------------------- *)
 pred build_invariant
     (chain : int list) (current : int) (layer depth N : int) (tri : int list) =
@@ -64,10 +64,10 @@ pred build_invariant
      (mem j tri => dr B = dr (2 * dr X))).
 
 (* ----------------------------------------------------------------- *)
-(* Hulplemma's over lijsten                                           *)
+(* Auxiliary lemmas about lists                                       *)
 (* ----------------------------------------------------------------- *)
 
-(* nth na append *)
+(* nth after append *)
 lemma nth_cat_lo (x : 'a) (s t : 'a list) (i : int) :
   0 <= i < size s => nth x (s ++ t) i = nth x s i.
 proof. by move=> hi; rewrite nth_cat hi. qed.
@@ -76,13 +76,13 @@ lemma nth_cat_hi (x : 'a) (s t : 'a list) (i : int) :
   size s <= i => nth x (s ++ t) i = nth x t (i - size s).
 proof. by move=> hi; rewrite nth_cat; smt(). qed.
 
-(* Grootte na append *)
+(* Size after append *)
 lemma size_cat_two (s : int list) (a b : int) :
   size (s ++ [a; b]) = size s + 2.
 proof. by rewrite size_cat /=. qed.
 
 (* ----------------------------------------------------------------- *)
-(* Correctheid van build                                              *)
+(* Correctness of build                                               *)
 (* ----------------------------------------------------------------- *)
 lemma build_correct (N : int) (depth : int) (tri : int list) :
   N > 143 => N %% 9 <> 0 => depth >= 0 =>
@@ -101,44 +101,44 @@ lemma build_correct (N : int) (depth : int) (tri : int list) :
 proof.
   move=> hN hmod hd.
   proc.
-  (* Stel de lusinvariant in *)
+  (* Set up the loop invariant *)
   while (build_invariant chain current layer depth N tri).
 
-  (* ---- Luslichaam: invariant wordt bewaard ---- *)
+  (* ---- Loop body: invariant is preserved ---- *)
   - move=> &hr.
-    (* Haal de invariant uit de precondition *)
+    (* Extract the invariant from the precondition *)
     rewrite /build_invariant.
     move=> [hlay [hsz [hn0 [hcur [hcurN [hcurmod hforall]]]]]].
-    (* Splits op de if-conditie *)
+    (* Split on the if-condition *)
     case (mem layer{hr} tri{hr}).
 
-    (* ==== Triangle-tak ==== *)
+    (* ==== Triangle branch ==== *)
     + move=> hmem.
       call (sample_triangle_correct current{hr} hcurN hcurmod).
       auto => />.
       move=> &m a b res_ok.
-      (* res_ok: (fst res = 0 /\ snd res = 0) \/ (lineair /\ dr A /\ dr B) *)
+      (* res_ok: (fst res = 0 /\ snd res = 0) \/ (linear /\ dr A /\ dr B) *)
       case res_ok.
-      * (* (0,0)-geval: onmogelijk als current > 143 en current %% 9 <> 0  *)
-        (* want triangle_k0_le_kmax garandeert dat k0 <= kmax               *)
+      * (* (0,0) case: impossible if current > 143 and current %% 9 <> 0  *)
+        (* because triangle_k0_le_kmax guarantees k0 <= kmax               *)
         move=> [ha0 hb0].
-        (* Tegenspraak: sample_triangle geeft (0,0) alleen als k0 > kmax,  *)
-        (* maar triangle_k0_le_kmax zegt k0 <= kmax                        *)
+        (* Contradiction: sample_triangle only returns (0,0) if k0 > kmax, *)
+        (* but triangle_k0_le_kmax says k0 <= kmax                        *)
         exfalso.
         have hk0 := triangle_k0_le_kmax current{hr} hcurN hcurmod.
-        (* In de procedure geldt: k0 = (B0 current - target_r) %% 9        *)
-        (* en kmax_val = kmax current. k0 > kmax_val leidde tot (0,0).     *)
-        (* Maar hk0 zegt k0 <= kmax current. Tegenspraak.                  *)
+        (* In the procedure: k0 = (B0 current - target_r) %% 9        *)
+        (* and kmax_val = kmax current. k0 > kmax_val led to (0,0).     *)
+        (* But hk0 says k0 <= kmax current. Contradiction.                  *)
         smt().
-      * (* Geldig geval: res voldoet aan lineaire eis + dr-eisen *)
+      * (* Valid case: res satisfies the linear requirement + dr requirements *)
         move=> [hlin [hdrA hdrB]].
         rewrite /build_invariant.
-        (* Bouw de nieuwe keten op *)
+        (* Build the new chain *)
         set chain' := chain{hr} ++ [a; b].
         split; first by smt().
         split; first by rewrite size_cat_two; smt().
         split.
-        - (* nth 0 chain' 0 = N: eerste element ongewijzigd *)
+        - (* nth 0 chain' 0 = N: first element unchanged *)
           rewrite /chain' nth_cat_lo /=; smt().
         split.
         - (* current' = nth 0 chain' (2*(layer+1)) = a *)
@@ -147,18 +147,18 @@ proof.
           simp; smt().
         split; first by smt(dr_rep_A a0_range).   (* a > 143? *)
         split.
-        - (* a %% 9 <> 0: dr(a) = dr(current) <> 0, en dr bepaalt rest mod 9 *)
+        - (* a %% 9 <> 0: dr(a) = dr(current) <> 0, and dr determines remainder mod 9 *)
           have hdrA2 : dr a = dr current{hr}.
             rewrite hdrA //.
           smt(dr_a0 a0_range).
-        (* Forall-clausule *)
+        (* Forall clause *)
         move=> j hj.
         case (j < layer{hr}).
-        - (* j < layer: inductiehypothese *)
+        - (* j < layer: induction hypothesis *)
           move=> hjl.
           have := hforall j.
           smt(nth_cat_lo size_cat_two).
-        - (* j = layer: de nieuwe laag *)
+        - (* j = layer: the new layer *)
           move=> hjge.
           have -> : j = layer{hr} by smt().
           rewrite /chain'.
@@ -172,12 +172,12 @@ proof.
           split.
           + (* dr a = dr X = dr current *)
             rewrite hdrA //.
-          + (* driehoekseis: mem layer tri => dr b = dr(2 * dr X) *)
+          + (* triangle requirement: mem layer tri => dr b = dr(2 * dr X) *)
             move=> _.
             (* hmem: mem layer tri, hdrB: dr b = dr(2 * dr current) *)
             rewrite hdrB //.
 
-    (* ==== Basic-tak ==== *)
+    (* ==== Basic branch ==== *)
     + move=> hnotmem.
       call (sample_basic_correct current{hr} hcurN hcurmod).
       auto => />.
@@ -211,12 +211,12 @@ proof.
         + rewrite hlin //.
         split.
         + rewrite hdrA //.
-        + (* Geen driehoekseis voor basic-laag: mem j tri is vals *)
+        + (* No triangle requirement for a basic layer: mem j tri is false *)
           move=> hmem.
-          (* j = layer{hr} en hnotmem zegt ~(mem layer{hr} tri{hr}) *)
+          (* j = layer{hr} and hnotmem says ~(mem layer{hr} tri{hr}) *)
           exfalso; smt().
 
-  (* ---- Initialisatie: invariant geldt voor layer = 0 ---- *)
+  (* ---- Initialization: the invariant holds for layer = 0 ---- *)
   - auto => />.
     rewrite /build_invariant /=.
     split; first by smt().
@@ -227,7 +227,7 @@ proof.
     split; first by exact hmod.
     by move=> j hj; smt().
 
-  (* ---- Na de lus: layer = depth, invariant => postcondition ---- *)
+  (* ---- After the loop: layer = depth, invariant => postcondition ---- *)
   - move=> &m.
     rewrite /build_invariant.
     move=> [hlay [hsz [hn0 [hcur [_ [_ hforall]]]]]].
@@ -236,14 +236,14 @@ proof.
       smt().
     split.
     + exact hn0.
-    + (* Forall clausule voor j < depth *)
+    + (* Forall clause for j < depth *)
       move=> j hj.
       have := hforall j.
       smt().
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* Equivalentie van build                                             *)
+(* Equivalence of build                                               *)
 (* ----------------------------------------------------------------- *)
 lemma build_equiv (N : int) (depth : int) (tri : int list) :
   N > 143 => N %% 9 <> 0 =>
@@ -253,7 +253,7 @@ proof.
   move=> hN hmod.
   proc.
   while (={layer, chain, current, depth, tri}).
-  - (* Luslichaam: beide takken synchroon *)
+  - (* Loop body: both branches in sync *)
     seq 1 1 : (={layer, chain, current, depth, tri, a, b}).
     + if => />.
       * call (sample_triangle_equiv current{1} hN hmod).
