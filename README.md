@@ -23,6 +23,8 @@
 
 - [Overview](#overview)
     - [How Deniability Works](#how-deniability-works)
+- [Comparison with Existing Systems](COMPARISON.md)
+    - [How Deniability Works](#how-deniability-works)
 - [Security Properties](#security-properties)
 - [Architecture](#architecture)
 - [Installation](#installation)
@@ -58,6 +60,8 @@ For any valid `N`, there exist exponentially many representation families `(A, B
 This gives the framework its core property: **the attacker and the coerced user stand in computationally isomorphic positions**.
 
 > 📖 **Want the full picture?** See [`DENIABILITY.md`](DENIABILITY.md) for a visual, step-by-step explanation of the Forest Analogy, the three-layer Matryoshka nesting, and why the coerced user can always produce a perfect alibi.
+>
+> For a detailed comparison with existing coercion-resistant systems (TrueCrypt, HoneyWords, Shadowfax, Anamorphic Encryption, etc.), see [`COMPARISON.md`](COMPARISON.md).
 
 ---
 
