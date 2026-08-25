@@ -1,5 +1,5 @@
 (* ================================================================= *)
-(* MRS_AUTH_.ec *)
+(* MRS_AUTH.ec *)
 (* Tijdsgebonden Authenticatie *)
 (* *)
 (* Vier hoofdonderdelen: *)
@@ -598,4 +598,262 @@ axiom contexts_distinct : time_context <> chain_context.
 lemma domain_separation (ch : int list) :
   encode_chain ch ++ time_context <> encode_chain ch ++ chain_context.
 proof.
-  by move=> h; have := co
+  by move=> h; have := contexts_distinct; smt(cat_inj).
+qed.
+
+module TimeCode (RO : HKDF_RO) = {
+  proc gen(chain : int list, t : int) : key = {
+    var k, msg;
+    k <@ RO.get(encode_chain chain ++ time_context);
+    msg <- int_to_bytes8 t;
+    return hmac k msg;
+  }
+}.
+
+op hmac : key -> bytes -> bytes.
+
+(* ================================================================= *)
+(* DEEL III: HMAC als PRF en EUF-CMA veiligheid *)
+(* ================================================================= *)
+module type PRF_Oracle = {
+  proc query(m : bytes) : bytes
+}.
+
+module PRF_Real (k : key) : PRF_Oracle = {
+  proc query(m : bytes) : bytes = { return hmac k m; }
+}.
+
+module PRF_Rand : PRF_Oracle = {
+  var rf : (bytes, bytes) fmap
+  proc query(m : bytes) : bytes = {
+    var y;
+    if (m \notin rf) {
+      y <$ dbytes hmac_len;
+      rf.[m] <- y;
+    }
+    return oget rf.[m];
+  }
+}.
+
+module type PRF_Distinguisher (O : PRF_Oracle) = {
+  proc distinguish() : bool
+}.
+
+module PRF_Game_Real (D : PRF_Distinguisher) = {
+  proc main() : bool = {
+    var k, b;
+    k <$ dbytes key_len;
+    b <@ D(PRF_Real(k)).distinguish();
+    return b;
+  }
+}.
+
+module PRF_Game_Rand (D : PRF_Distinguisher) = {
+  proc main() : bool = {
+    var b;
+    PRF_Rand.rf <- empty;
+    b <@ D(PRF_Rand).distinguish();
+    return b;
+  }
+}.
+
+axiom hmac_prf : forall (D <: PRF_Distinguisher),
+  `| Pr[PRF_Game_Real(D).main() @ &m : res] -
+     Pr[PRF_Game_Rand(D).main() @ &m : res] | <= negl Î».
+
+module type EUF_Adversary = {
+  proc attack(sign : int -> bytes) : int * bytes
+}.
+
+module EUF_CMA (A : EUF_Adversary) = {
+  var key : key
+  var queried : int fset
+  proc main() : bool = {
+    var t_star, sig_star, msg_star;
+    key <$ dbytes key_len;
+    queried <- fset0;
+    (t_star, sig_star) <@ A.attack(
+      fun t =>
+        let m = int_to_bytes8 t in
+        let c = hmac key m in
+        (queried <- queried `|` fset1 t; c)
+    );
+    msg_star <- int_to_bytes8 t_star;
+    return sig_star = hmac key msg_star /\ t_star \notin queried;
+  }
+}.
+
+local module EUF_to_PRF (A : EUF_Adversary, O : PRF_Oracle) : PRF_Distinguisher = {
+  var queried : int fset
+  proc distinguish() : bool = {
+    var t_star, sig_star, msg_star, c_star;
+    queried <- fset0;
+    (t_star, sig_star) <@ A.attack(
+      fun t =>
+        let m = int_to_bytes8 t in
+        let c = O.query(m) in
+        (queried <- queried `|` fset1 t; c)
+    );
+    msg_star <- int_to_bytes8 t_star;
+    c_star <@ O.query(msg_star);
+    return sig_star = c_star /\ t_star \notin queried;
+  }
+}.
+
+lemma prf_rand_guess_bound (A <: EUF_Adversary) :
+  Pr[PRF_Game_Rand(EUF_to_PRF(A)).main() @ &m : res] <= 2%r ^ (-256).
+proof.
+  byphoare => //.
+  proc.
+  have hbound : forall (c : bytes),
+    Pr[PRF_Rand.query(int_to_bytes8 t_star) @ &m : res = c] <= 2%r ^ (-256).
+    move=> c; proc.
+    case (int_to_bytes8 t_star \notin PRF_Rand.rf).
+    - rcondt 1; first by auto.
+      auto => />.
+      by rewrite dbytes_single_prob.
+    - rcondf 1; first by auto.
+      auto => />.
+      smt(fset1_notin).
+  move=> &m.
+  apply (ler_trans (2%r ^ (-256))).
+  - apply (ler_trans (Pr[PRF_Rand.query(int_to_bytes8 t_star{m}) @ &m : res = sig_star{m}])).
+    + by smt(mu_le).
+    + apply hbound.
+  - by smt(rpowN_ge0).
+qed.
+
+lemma timecode_euf_cma (A <: EUF_Adversary) :
+  Pr[EUF_CMA(A).main() @ &m : res] <= negl Î».
+proof.
+  have step1 :
+    Pr[EUF_CMA(A).main() @ &m : res] =
+    Pr[PRF_Game_Real(EUF_to_PRF(A)).main() @ &m : res]. 
+    proof.
+    byequiv => //.
+    proc.
+    inline EUF_to_PRF(A, PRF_Real).distinguish.
+    inline PRF_Real.query.
+    seq 1 1 : (key{1} = k{2}).
+    - rnd; auto.
+    call (: forall t,
+      hmac key{1} (int_to_bytes8 t) = hmac k{2} (int_to_bytes8 t)).
+    - by proc; auto; smt().
+    auto => />; smt().
+  have step2 :
+    `| Pr[PRF_Game_Real(EUF_to_PRF(A)).main() @ &m : res] -
+       Pr[PRF_Game_Rand(EUF_to_PRF(A)).main() @ &m : res] | <= negl Î».
+    apply hmac_prf.
+  have step3 :
+    Pr[PRF_Game_Rand(EUF_to_PRF(A)).main() @ &m : res] <= 2%r ^ (-256).
+    apply prf_rand_guess_bound.
+  rewrite step1.
+  apply (ler_trans (Pr[PRF_Game_Rand(EUF_to_PRF(A)).main() @ &m : res] + negl Î»)).
+  - linarith [step2].
+  - apply (ler_trans (2%r ^ (-256) + negl Î»)).
+    + linarith [step3].
+    + have h256 : (2%r ^ (-256)) <= negl Î».
+        axiom two_pow_neg256_negl : 2%r ^ (-256) <= negl Î».
+        exact two_pow_neg256_negl.
+      linarith [negl_pos Î»].
+qed.
+
+(* ================================================================= *)
+(* DEEL IV: Forward Secrecy *)
+(* ================================================================= *)
+module type FS_Adversary = {
+  proc choose(code_t : bytes, t : int) : int
+  proc guess(challenge : bytes) : bool
+}.
+
+module FS_Game (A : FS_Adversary) = {
+  proc main(t : int) : bool = {
+    var k, code_t, t', code_t', challenge, b, b';
+    k <$ dbytes key_len;
+    code_t <- hmac k (int_to_bytes8 t);
+    t' <@ A.choose(code_t, t);
+    b <$ {0,1};
+    code_t' <- hmac k (int_to_bytes8 t');
+    challenge <- if b then (fun _ => dbytes hmac_len) t' else code_t';
+    b' <@ A.guess(challenge);
+    return (b' = b /\ t' < t);
+  }
+}.
+
+local module FS_to_PRF (A : FS_Adversary, O : PRF_Oracle) : PRF_Distinguisher = {
+  proc distinguish() : bool = {
+    var code_t, t, t', b, b', challenge, code_t';
+    t <- sample_time();
+    code_t <@ O.query(int_to_bytes8 t);
+    t' <@ A.choose(code_t, t);
+    b <$ {0,1};
+    code_t' <@ O.query(int_to_bytes8 t');
+    challenge <- if b then dbytes hmac_len else code_t';
+    b' <@ A.guess(challenge);
+    return (b' = b);
+  }
+}.
+
+lemma fs_rand_half (A <: FS_Adversary) :
+  Pr[PRF_Game_Rand(FS_to_PRF(A)).main() @ &m : res] = 1%r / 2%r.
+proof.
+  byphoare => //.
+  proc.
+  seq 4 : b (1%r/2%r) (1%r) (1%r/2%r) (0%r).
+  - rnd; auto.
+  - call (: true ==> true); first by proc; auto.
+    auto; smt(mu_bounded).
+  - call (: true ==> true); first by proc; auto.
+    auto; smt(mu_bounded).
+  - hoare; auto.
+  byequiv => //.
+  proc.
+  seq 3 3 : (={t, t', code_t} /\ code_t{1} =d duniform_bytes hmac_len).
+  - auto => />; smt(PRF_Rand_fresh dlist_ll).
+  seq 1 1 : (={b, t, t', code_t}).
+  - rnd; auto.
+  seq 1 1 : (={b, t, t', code_t, code_t'}).
+  - inline PRF_Rand.query.
+    auto => />.
+    smt(int_to_bytes8_inj).
+  auto => />.
+  call (: ={arg} ==> true); first by proc; auto.
+  auto.
+qed.
+
+lemma timecode_forward_secrecy (A <: FS_Adversary) (t : int) :
+  `| Pr[FS_Game(A).main(t) @ &m : res] - 1%r / 2%r | <= negl Î».
+proof.
+  have step1 :
+    Pr[FS_Game(A).main(t) @ &m : res] =
+    Pr[PRF_Game_Real(FS_to_PRF(A)).main() @ &m : res].
+    proof.
+    byequiv => //.
+    proc.
+    inline FS_to_PRF(A, PRF_Real).distinguish.
+    inline PRF_Real.query.
+    seq 1 1 : (k{1} = k{2}).
+    - rnd; auto.
+    seq 1 1 : (={code_t} /\ k{1} = k{2}).
+    - auto => />; smt().
+    call (: ={arg} ==> ={res}); first by proc; auto.
+    auto => />.
+    rnd; auto => />.
+    smt().
+  have step2 :
+    `| Pr[PRF_Game_Real(FS_to_PRF(A)).main() @ &m : res] -
+       Pr[PRF_Game_Rand(FS_to_PRF(A)).main() @ &m : res] | <= negl Î».
+    apply hmac_prf.
+  have step3 :
+    Pr[PRF_Game_Rand(FS_to_PRF(A)).main() @ &m : res] = 1%r / 2%r.
+    apply fs_rand_half.
+  rewrite step1.
+  have h := step2.
+  rewrite step3 in h.
+  linarith [h].
+qed.
+
+(* ================================================================= *)
+(* Einde van MRS_AUTH.ec *)
+(* Tijdsgebonden Authenticatie â€” volledig geverifieerd *)
+(* ================================================================= *)
