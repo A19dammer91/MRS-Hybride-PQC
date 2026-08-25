@@ -10,19 +10,13 @@ name = "mrs_auth_pqc"
 path = "src/lib.rs"
 
 [dependencies]
-# Post-quantum KEM -- Kyber1024 (NIST Level 5), per the paper's security claims
 pqc_kyber = { version = "0.7", features = ["std", "kyber1024"] }
-
-# Constant-time operations against timing attacks
 subtle = { version = "2.6", default-features = false }
-
-# Automatic memory wiping from RAM
 zeroize = { version = "1.8", features = ["derive"] }
-
-# Hashing and cryptographic building blocks
 sha2    = "0.10"
 hmac    = "0.12"
 aes-gcm = "0.10"
+rand    = "0.8"
 
 [dev-dependencies]
 criterion = "0.5"
