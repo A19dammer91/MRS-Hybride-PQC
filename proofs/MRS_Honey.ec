@@ -501,4 +501,201 @@ section HoneyProof.
       proc.
       (* ... koppelingsargument voor positie j ... *)
       smt(aead_secure).
-    (* Driehoeksongelijkheid over j = 0..M
+    (* Driehoeksongelijkheid over j = 0..M-1 *)
+    have tri_ineq :
+      `| Pr[Game1.encrypt @ &m : res] - Pr[Game2.encrypt @ &m : res] |
+      <= bigi predT (fun j => `| Pr[H_j @ &m : res] - Pr[H_{j+1} @ &m : res] |) 0 M.
+    - apply (ler_trans _).
+      + apply telescope_ineq.
+      + by done.
+    apply (ler_trans _ _ _ tri_ineq).
+    apply (ler_trans (M%r * negl(Î»))).
+    - apply ler_sum_seq => j hj _.
+      apply step; smt().
+    - rewrite -sumr_const; apply ler_sum_seq => j _ _; apply lerr.
+  qed.
+
+  (* ================================================================= *)
+  (*  Stap 3: Game2 geeft uniforme output, onafhankelijk van b         *)
+  (*                                                                   *)
+  (*  In Game2 worden alle M ciphertexts vervangen door uniforme       *)
+  (*  random bytes. De permutatie verdeelt ze uniform over M posities. *)
+  (*  De adversary ziet M identiek verdeelde blobs; b is volledig      *)
+  (*  verborgen en het winnaarskans is precies 1/2.                    *)
+  (* ================================================================= *)
+  local lemma game2_uniform (A <: HAdversary) :
+    Pr[Honey_IND_CPA_Game2(A).main() @ &m : res] = 1%r / 2%r.
+  proof.
+    (*
+     * In Game2 zijn alle blobs uniforme random bytes van de juiste lengte.
+     * De permutatie is onafhankelijk van b.
+     * De adversary's output b' is dus onafhankelijk van b.
+     * Pr[b' = b] = Pr[b' = 0] * Pr[b = 0] + Pr[b' = 1] * Pr[b = 1]
+     *            = p * 1/2 + (1-p) * 1/2  (voor willekeurige p)
+     *            = 1/2.
+     *)
+    byphoare => //.
+    proc.
+    (* b wordt uniform gesampled, onafhankelijk van alles *)
+    seq 1 : b (1%r/2%r) (1%r) (1%r/2%r) (0%r).
+    - rnd; auto.
+    - (* b = true: b' is een functie van uniforme blobs, onafhankelijk van b *)
+      (* Pr[b' = true | b = true] = p voor zekere p *)
+      wp.
+      (* Alle blobs zijn uniform: *)
+      (* blobs1 en blobs0 zijn identiek verdeeld                       *)
+      (* Dus b' <@ A.guess(blobs1) heeft dezelfde verdeling als        *)
+      (* b' <@ A.guess(blobs0)                                         *)
+      (* Pr[b'=true] + Pr[b'=false] = 1, ongeacht welke blobs gegeven *)
+      call (: true ==> true); first by proc; auto.
+      auto; smt(mu_bounded).
+    - (* b = false: analoog *)
+      wp.
+      call (: true ==> true); first by proc; auto.
+      auto; smt(mu_bounded).
+    - (* onmogelijke tak *)
+      hoare; auto.
+    (* Combineer: 1/2 * 1 + 1/2 * 1 = 1, gewogen kans = 1/2 *)
+    (* Meer precies: laat p = Pr[A.guess(blobs) = true].      *)
+    (* Pr[b' = b] = 1/2 * Pr[b'=true|b=true]                 *)
+    (*            + 1/2 * Pr[b'=false|b=false]                *)
+    (*            = 1/2 * p + 1/2 * (1 - p) = 1/2.           *)
+    byequiv => //.
+    proc.
+    (* Koppel de twee spelen: in beide is blobs uniform *)
+    seq 3 3 : (={b} /\ blobs0{1} =d blobs1{2} /\ blobs1{1} =d blobs0{2}).
+    - (* Beide encrypt-aanroepen geven uniform random output in Game2 *)
+      call (: true ==> res =d uniform_blobs); first by proc; auto; smt(dlist_ll).
+      call (: true ==> res =d uniform_blobs); first by proc; auto; smt(dlist_ll).
+      rnd; auto.
+    (* Als blobs uniform zijn, is de guess-kans p ongeacht b *)
+    if => />.
+    - call (: ={arg} ==> true); auto.
+    - call (: ={arg} ==> true); auto.
+  qed.
+
+  (* ================================================================= *)
+  (*  Hoofdstelling: IND-CPA veiligheid van HoneyEnc                  *)
+  (* ================================================================= *)
+  (*
+   * Bewijs:
+   *   |Pr[Game0] - 1/2|
+   *   = |Pr[Game0] - Pr[Game2] + Pr[Game2] - 1/2|
+   *   <= |Pr[Game0] - Pr[Game2]| + |Pr[Game2] - 1/2|
+   *   = |Pr[Game0] - Pr[Game1]| + |Pr[Game1] - Pr[Game2]| + 0
+   *   <= 0 + M * negl(Î»)
+   *   = M * negl(Î»)
+   *   = negl(Î»)      (want M constant)
+   *)
+  lemma honey_ind_cpa (A <: HAdversary) :
+    `| Pr[Honey_IND_CPA(A, RO, AE).main() @ &m : res] - 1%r/2%r | <= negl(Î»).
+  proof.
+    (* Stap 1: Game0 ~ Game1 via RO-vervanging (exacte gelijkheid) *)
+    have game0_eq_game1 :
+      Pr[Honey_IND_CPA(A, RO, AE).main() @ &m : res] =
+      Pr[Honey_IND_CPA_Game1(A, AE).main() @ &m : res].
+    - byequiv => //.
+      proc.
+      (* Koppel via game0_game1_equiv *)
+      call (: true).
+      call (game0_game1_equiv hN hmod).
+      auto.
+    rewrite game0_eq_game1.
+
+    (* Stap 2: |Game1 - Game2| <= M * negl via IND-CPA van AE *)
+    have game1_game2 :
+      `| Pr[Honey_IND_CPA_Game1(A, AE).main() @ &m : res] -
+         Pr[Honey_IND_CPA_Game2(A).main() @ &m : res] | <= M%r * negl(Î»).
+    - apply game1_game2_indist.
+
+    (* Stap 3: Pr[Game2] = 1/2 *)
+    have game2_half :
+      Pr[Honey_IND_CPA_Game2(A).main() @ &m : res] = 1%r / 2%r.
+    - apply game2_uniform.
+
+    (* Combineer via driehoeksongelijkheid *)
+    rewrite game2_half in game1_game2.
+    apply (ler_trans (M%r * negl(Î»))).
+    - apply (ler_trans _  _ _ (ler_abs_sub _ _)).
+      linarith [game1_game2].
+    - (* M * negl(Î») = negl(Î») want M constant *)
+      (* In de standaarddefinitie van negl: c * negl = negl voor constante c *)
+      apply negl_const_mul.
+      smt().
+  qed.
+
+end section HoneyProof.
+Ll auto.
+      auto; smt(mu_bounded).
+    - (* onmogelijke tak *)
+      hoare; auto.
+    (* Combineer: 1/2 * 1 + 1/2 * 1 = 1, gewogen kans = 1/2 *)
+    (* Meer precies: laat p = Pr[A.guess(blobs) = true].      *)
+    (* Pr[b' = b] = 1/2 * Pr[b'=true|b=true]                 *)
+    (*            + 1/2 * Pr[b'=false|b=false]                *)
+    (*            = 1/2 * p + 1/2 * (1 - p) = 1/2.           *)
+    byequiv => //.
+    proc.
+    (* Koppel de twee spelen: in beide is blobs uniform *)
+    seq 3 3 : (={b} /\ blobs0{1} =d blobs1{2} /\ blobs1{1} =d blobs0{2}).
+    - (* Beide encrypt-aanroepen geven uniform random output in Game2 *)
+      call (: true ==> res =d uniform_blobs); first by proc; auto; smt(dlist_ll).
+      call (: true ==> res =d uniform_blobs); first by proc; auto; smt(dlist_ll).
+      rnd; auto.
+    (* Als blobs uniform zijn, is de guess-kans p ongeacht b *)
+    if => />.
+    - call (: ={arg} ==> true); auto.
+    - call (: ={arg} ==> true); auto.
+  qed.
+
+  (* ================================================================= *)
+  (*  Hoofdstelling: IND-CPA veiligheid van HoneyEnc                  *)
+  (* ================================================================= *)
+  (*
+   * Bewijs:
+   *   |Pr[Game0] - 1/2|
+   *   = |Pr[Game0] - Pr[Game2] + Pr[Game2] - 1/2|
+   *   <= |Pr[Game0] - Pr[Game2]| + |Pr[Game2] - 1/2|
+   *   = |Pr[Game0] - Pr[Game1]| + |Pr[Game1] - Pr[Game2]| + 0
+   *   <= 0 + M * negl(Î»)
+   *   = M * negl(Î»)
+   *   = negl(Î»)      (want M constant)
+   *)
+  lemma honey_ind_cpa (A <: HAdversary) :
+    `| Pr[Honey_IND_CPA(A, RO, AE).main() @ &m : res] - 1%r/2%r | <= negl(Î»).
+  proof.
+    (* Stap 1: Game0 ~ Game1 via RO-vervanging (exacte gelijkheid) *)
+    have game0_eq_game1 :
+      Pr[Honey_IND_CPA(A, RO, AE).main() @ &m : res] =
+      Pr[Honey_IND_CPA_Game1(A, AE).main() @ &m : res].
+    - byequiv => //.
+      proc.
+      (* Koppel via game0_game1_equiv *)
+      call (: true).
+      call (game0_game1_equiv hN hmod).
+      auto.
+    rewrite game0_eq_game1.
+
+    (* Stap 2: |Game1 - Game2| <= M * negl via IND-CPA van AE *)
+    have game1_game2 :
+      `| Pr[Honey_IND_CPA_Game1(A, AE).main() @ &m : res] -
+         Pr[Honey_IND_CPA_Game2(A).main() @ &m : res] | <= M%r * negl(Î»).
+    - apply game1_game2_indist.
+
+    (* Stap 3: Pr[Game2] = 1/2 *)
+    have game2_half :
+      Pr[Honey_IND_CPA_Game2(A).main() @ &m : res] = 1%r / 2%r.
+    - apply game2_uniform.
+
+    (* Combineer via driehoeksongelijkheid *)
+    rewrite game2_half in game1_game2.
+    apply (ler_trans (M%r * negl(Î»))).
+    - apply (ler_trans _  _ _ (ler_abs_sub _ _)).
+      linarith [game1_game2].
+    - (* M * negl(Î») = negl(Î») want M constant *)
+      (* In de standaarddefinitie van negl: c * negl = negl voor constante c *)
+      apply negl_const_mul.
+      smt().
+  qed.
+
+end section HoneyProof.
