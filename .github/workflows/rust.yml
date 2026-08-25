@@ -11,11 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v4
 
-    - name: Installeer Rust
-      run: rustup update stable
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
 
-    - name: Voer Cargo Test uit
+    - name: Run tests
       run: cargo test --verbose
       
