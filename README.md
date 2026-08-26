@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://doi.org/10.5281/zenodo.21852606"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.21852606.svg" alt="DOI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
   <a href="https://github.com/A19dammer91/MRS-Hybride-PQC/actions/workflows/rust.yml"><img src="https://img.shields.io/github/actions/workflow/status/A19dammer91/MRS-Hybride-PQC/rust.yml?branch=main&label=Tests" alt="Build Status"></a>
   <a href="https://github.com/A19dammer91/MRS-Hybride-PQC/actions/workflows/benchmark.yml"><img src="https://img.shields.io/github/actions/workflow/status/A19dammer91/MRS-Hybride-PQC/benchmark.yml?branch=main&label=Benchmark" alt="Benchmark"></a>
   <img src="https://img.shields.io/badge/Rust-1.70%2B-orange.svg" alt="Rust 1.70+">
@@ -370,4 +370,4 @@ If you use MRS-AUTH in academic work, please cite:
 
 ## License
 
-This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for details.
+This project is licensed under the **Apache-2.0** — see [LICENSE](LICENSE) for details.
