@@ -1,8 +1,10 @@
+```rust
 use sha2::{Sha256, Digest};
 use subtle::{ConstantTimeEq, Choice};
 use zeroize::Zeroize;
+use crate::sampler::{MrsChain, SamplerInt};
 
-/// Representatie van een Merkle-proof voor een geselecteerde alibi-keten
+/// Merkle inclusion proof for a selected alibi chain.
 #[derive(Debug, Clone, Zeroize)]
 #[zeroize(drop)]
 pub struct MerkleProof {
@@ -11,13 +13,27 @@ pub struct MerkleProof {
     pub path_bits: Vec<bool>,
 }
 
-/// Bouwt de wortel (Root Commitment) van een k-acceptance boom op basis van k keten-hashes
+/// Hashes an MRS chain into a single 32-byte leaf digest.
+///
+/// Each layer contributes its A and B bytes, SHA256-ed sequentially.
+/// This produces a deterministic hash suitable for Merkle commitment.
+pub fn hash_mrs_chain<T: SamplerInt>(chain: &MrsChain<T>) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for pair in &chain.layers {
+        hasher.update(&pair.a.to_be_bytes_vec());
+        hasher.update(&pair.b.to_be_bytes_vec());
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&hasher.finalize());
+    out
+}
+
+/// Builds the k-acceptance Merkle root from a list of chain hashes.
 pub fn build_k_acceptance_root(chain_hashes: &[[u8; 32]], k_param: usize) -> Option<[u8; 32]> {
     if chain_hashes.is_empty() || chain_hashes.len() > k_param {
         return None;
     }
 
-    // Dwing een gebalanceerde boom af door aan te vullen met veilige dummy paden (padding)
     let mut tree_leaves = vec![[0u8; 32]; k_param];
     for (i, hash) in chain_hashes.iter().enumerate() {
         tree_leaves[i] = *hash;
@@ -26,14 +42,12 @@ pub fn build_k_acceptance_root(chain_hashes: &[[u8; 32]], k_param: usize) -> Opt
     let mut current_level = tree_leaves;
     while current_level.len() > 1 {
         let mut next_level = Vec::with_capacity((current_level.len() + 1) / 2);
-        
         for chunk in current_level.chunks(2) {
             let mut hasher = Sha256::new();
             if chunk.len() == 2 {
                 hasher.update(chunk[0]);
                 hasher.update(chunk[1]);
             } else {
-                // Symmetrische hashing voor oneven knopen om dieptedistributie gelijk te houden
                 hasher.update(chunk[0]);
                 hasher.update(chunk[0]);
             }
@@ -47,14 +61,13 @@ pub fn build_k_acceptance_root(chain_hashes: &[[u8; 32]], k_param: usize) -> Opt
     Some(current_level[0])
 }
 
-/// Verifieert in constante-tijd of een gepresenteerde chain thuishoort in de k-acceptance commitment root
+/// Verifies in constant time whether a leaf belongs to the Merkle root.
 pub fn verify_k_acceptance_proof(
     root: &[u8; 32],
     leaf_hash: &[u8; 32],
-    proof: &MerkleProof
+    proof: &MerkleProof,
 ) -> Choice {
     let mut current_hash = *leaf_hash;
-
     for (sibling, is_right) in proof.lemmas.iter().zip(proof.path_bits.iter()) {
         let mut hasher = Sha256::new();
         if *is_right {
@@ -66,7 +79,35 @@ pub fn verify_k_acceptance_proof(
         }
         current_hash.copy_from_slice(&hasher.finalize());
     }
-
-    // Verifieer de berekende wortel tegen de opgeslagen root commitment
     current_hash.ct_eq(root)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crypto_bigint::U64;
+    use crate::core::diophantine::DiophantinePair;
+
+    #[test]
+    fn hash_chain_deterministic() {
+        let chain = MrsChain {
+            layers: vec![
+                DiophantinePair { a: U64::from(19u64), b: U64::from(9u64) },
+                DiophantinePair { a: U64::from(5u64), b: U64::from(3u64) },
+            ],
+            valid: subtle::Choice::from(1u8),
+        };
+        let h1 = hash_mrs_chain(&chain);
+        let h2 = hash_mrs_chain(&chain);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn merkle_root_two_leaves() {
+        let leaf1 = [1u8; 32];
+        let leaf2 = [2u8; 32];
+        let root = build_k_acceptance_root(&[leaf1, leaf2], 2).unwrap();
+        assert_ne!(root, [0u8; 32]);
+    }
+}
+```
