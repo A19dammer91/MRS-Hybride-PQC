@@ -1,4 +1,3 @@
-```rust
 pub mod diophantine;
 
 pub use diophantine::{
@@ -7,4 +6,3 @@ pub use diophantine::{
     check_frobenius_bound, generate_representation_family,
     select_branch_free, select_branch_free_with_index,
 };
-```
