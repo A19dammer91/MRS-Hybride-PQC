@@ -13,6 +13,9 @@ use zeroize::Zeroize;
 
 /// Everything the MRS(19,9) algebra needs from an integer type, and nothing
 /// more. Implemented below for `crypto_bigint::{U64, U256}`.
+///
+/// `ZERO` komt van het supertrait `ConstZero`; we definieren het hier NIET
+/// opnieuw om ambiguiteit (E0034) te voorkomen.
 pub trait MrsInt:
     Clone
     + Copy
@@ -30,17 +33,11 @@ pub trait MrsInt:
     + ConditionallySelectable
     + Zeroize
 {
-    /// The additive identity.
-    const ZERO: Self;
 }
 
-impl MrsInt for crypto_bigint::U64 {
-    const ZERO: Self = crypto_bigint::U64::ZERO;
-}
+impl MrsInt for crypto_bigint::U64 {}
 
-impl MrsInt for crypto_bigint::U256 {
-    const ZERO: Self = crypto_bigint::U256::ZERO;
-}
+impl MrsInt for crypto_bigint::U256 {}
 
 /// Builds a `NonZero<T>` from a small compile-time-known constant.
 #[inline]
@@ -294,4 +291,4 @@ mod tests {
         assert!(bool::from(res.valid));
         assert_eq!(res.pair.a, target);
     }
-}
+            }
