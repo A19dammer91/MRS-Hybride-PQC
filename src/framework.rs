@@ -1,4 +1,3 @@
-```rust
 //! Top-level framework tying Kyber1024, MRS(19,9) sampling, and AES-256-GCM.
 
 use pqc_kyber::{decapsulate, encapsulate, keypair, KyberError};
@@ -120,4 +119,3 @@ mod tests {
         assert_eq!(plaintext.to_vec(), recovered);
     }
 }
-```
