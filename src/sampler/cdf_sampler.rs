@@ -116,7 +116,7 @@ fn uniform_below(bound: u64, rng: &mut impl RngCore) -> u64 {
 /// of valid 3-layer completions). On the final layer, every representation
 /// has weight 1 because it is itself a complete chain.
 ///
-/// This guarantees that every complete chain in Omega(root_n) is produced
+/// This guarantees that every complete chain in `Omega(root_n)` is produced
 /// with exactly equal probability (Forest Symmetry Theorem).
 ///
 /// # Design note
@@ -282,4 +282,3 @@ mod tests {
         }
     }
 }
-
