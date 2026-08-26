@@ -1,4 +1,4 @@
-use crate::sampler::{MrsChain, SamplerInt};
+use crate::sampler::MrsChain;
 use pqc_kyber::KYBER_SSBYTES;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
@@ -15,22 +15,19 @@ pub struct HybridCiphertextPacket {
     pub aes_payload: Vec<u8>,
 }
 
-/// Derives the hybrid AES-256 key from Kyber SS + MRS chain + session_id.
-///
-/// Generic over `T: SamplerInt` so it works for both `U64` and `U256`.
-pub fn derive_hybrid_key<T: SamplerInt>(
+pub fn derive_hybrid_key(
     kyber_ss: &[u8; KYBER_SSBYTES],
-    mrs_chain: &MrsChain<T>,
+    mrs_chain: &MrsChain,
     session_id: &[u8]
 ) -> Result<[u8; 32], &'static str> {
     let mut mrs_bytes = Vec::new();
     for pair in &mrs_chain.layers {
-        mrs_bytes.extend_from_slice(&pair.a.to_be_bytes_vec());
-        mrs_bytes.extend_from_slice(&pair.b.to_be_bytes_vec());
+        mrs_bytes.extend_from_slice(&pair.a.to_be_bytes());
+        mrs_bytes.extend_from_slice(&pair.b.to_be_bytes());
     }
 
     let mut extract = <HkdfExtract as Mac>::new_from_slice(session_id)
-        .map_err(|_| "HKDF-Extract init error")?;
+        .map_err(|_| "HKDF-Extract initialization error")?;
 
     <HkdfExtract as Mac>::update(&mut extract, kyber_ss);
     <HkdfExtract as Mac>::update(&mut extract, &mrs_bytes);
@@ -51,8 +48,13 @@ pub fn encrypt_payload_hybrid(
     let key = Key::<Aes256Gcm>::from_slice(key_bytes);
     let cipher = Aes256Gcm::new(key);
     let nonce = Nonce::from_slice(nonce_bytes);
-    cipher.encrypt(nonce, aes_gcm::aead::Payload { msg: plaintext, aad: associated_data })
-        .map_err(|_| "AES-GCM encryption failed")
+
+    let payload = cipher.encrypt(nonce, aes_gcm::aead::Payload {
+        msg: plaintext,
+        aad: associated_data,
+    }).map_err(|_| "AES-GCM encryption failed")?;
+
+    Ok(payload)
 }
 
 pub fn decrypt_payload_hybrid(
@@ -64,6 +66,11 @@ pub fn decrypt_payload_hybrid(
     let key = Key::<Aes256Gcm>::from_slice(key_bytes);
     let cipher = Aes256Gcm::new(key);
     let nonce = Nonce::from_slice(nonce_bytes);
-    cipher.decrypt(nonce, aes_gcm::aead::Payload { msg: ciphertext, aad: associated_data })
-        .map_err(|_| "AES-GCM decryption failed")
+
+    let plaintext = cipher.decrypt(nonce, aes_gcm::aead::Payload {
+        msg: ciphertext,
+        aad: associated_data,
+    }).map_err(|_| "AES-GCM decryption failed (integrity check failed)")?;
+
+    Ok(plaintext)
 }
