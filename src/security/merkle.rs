@@ -1,4 +1,3 @@
-```rust
 use sha2::{Sha256, Digest};
 use subtle::{ConstantTimeEq, Choice};
 use zeroize::Zeroize;
@@ -110,4 +109,4 @@ mod tests {
         assert_ne!(root, [0u8; 32]);
     }
 }
-```
+
