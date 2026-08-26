@@ -16,4 +16,6 @@ pub use crate::framework::{MrsAuthFramework, SecureEnvelope, Keypair, FrameworkE
 pub use crate::sampler::{
     MrsChain, SamplerInt, FromRandom, sample_three_layers, sample_triangle
 };
-pub use crate::security::{TimeCode, generate_timecode, LweInstance, ToLweCoefficient, MerkleProof, hash_mrs_chain};
+pub use crate::security::{
+    TimeCode, generate_timecode, LweInstance, ToLweCoefficient, MerkleProof, hash_mrs_chain
+};
