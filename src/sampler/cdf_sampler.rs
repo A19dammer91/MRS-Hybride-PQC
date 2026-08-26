@@ -8,7 +8,7 @@ use crate::core::diophantine::{
     calculate_anchor, calculate_popoviciu_cardinality, generate_representation_family,
     select_branch_free, check_frobenius_bound,
 };
-use crypto_bigint::{CheckedAdd, CheckedMul, CheckedSub, NonZero, U64, U256};
+use crypto_bigint::{CheckedAdd, CheckedSub, NonZero, U64, U256};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable};
 use zeroize::Zeroize;
@@ -147,7 +147,8 @@ pub fn sample_triangle<T: SamplerInt>(n: &T, rng: &mut impl RngCore) -> BranchFr
     let target_r = digital_root(&two_dr_n);
 
     let b0_lt_target = b0.ct_lt(&target_r);
-    let b0_adjusted = b0.conditional_select(
+    let b0_adjusted = T::conditional_select(
+        &b0,
         &b0.checked_add(&nine.get()).expect("B0+9 overflow"),
         b0_lt_target,
     );
@@ -158,7 +159,11 @@ pub fn sample_triangle<T: SamplerInt>(n: &T, rng: &mut impl RngCore) -> BranchFr
 
     let is_valid = !k0.ct_gt(&k_max);
 
-    let diff = k_max.checked_sub(&k0).unwrap_or(zero).conditional_select(&zero, !is_valid);
+    let diff = T::conditional_select(
+        &k_max.checked_sub(&k0).unwrap_or(zero),
+        &zero,
+        !is_valid,
+    );
     let t_max = diff.div(nine);
 
     let t = uniform_below(&t_max, rng);
@@ -171,8 +176,8 @@ pub fn sample_triangle<T: SamplerInt>(n: &T, rng: &mut impl RngCore) -> BranchFr
     let nineteen_a = nineteen.checked_mul(&a).expect("19A overflow");
     let b = n.checked_sub(&nineteen_a).expect("N-19A underflow").div(nine);
 
-    let final_a = a.conditional_select(&zero, !is_valid);
-    let final_b = b.conditional_select(&zero, !is_valid);
+    let final_a = T::conditional_select(&a, &zero, !is_valid);
+    let final_b = T::conditional_select(&b, &zero, !is_valid);
 
     BranchFreeResult {
         pair: DiophantinePair { a: final_a, b: final_b },
@@ -293,4 +298,4 @@ mod tests {
         assert!(bool::from(n.ct_gt(&chain.layers[0].a)));
         assert!(bool::from(chain.layers[0].a.ct_gt(&chain.layers[1].a)));
     }
-                                              }
+}
