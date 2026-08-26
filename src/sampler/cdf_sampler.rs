@@ -302,4 +302,4 @@ mod tests {
         let c2 = sample_three_layers(&n, &mut rng).unwrap();
         assert_ne!(c1.layers[0].a, c2.layers[0].a);
     }
-}
+        }
