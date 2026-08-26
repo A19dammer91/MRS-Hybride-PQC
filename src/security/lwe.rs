@@ -1,10 +1,9 @@
 use crate::core::diophantine::MrsInt;
 use crypto_bigint::{U256, U64};
-use subtle::Choice;
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use zeroize::Zeroize;
 
 /// Trait to convert a big integer into a u64 suitable for LWE coefficients.
-/// For U64: direct cast. For U256: takes the lowest 64 bits.
 pub trait ToLweCoefficient: MrsInt {
     fn to_lwe_u64(&self) -> u64;
 }
@@ -30,9 +29,6 @@ pub struct LweInstance {
 }
 
 /// Masks MRS parameters inside an LWE instance: b = (A·s + e) mod q.
-///
-/// Generic over `T` so it accepts both `U64` and `U256` chain values.
-/// Each `T` is reduced to its lowest 64 bits for the LWE modulus field.
 pub fn isolate_chain_parameter<T: ToLweCoefficient>(
     secret_s: &[T],
     noise_e: &[u64],
@@ -45,7 +41,6 @@ pub fn isolate_chain_parameter<T: ToLweCoefficient>(
     let n = secret_s.len();
     let s_u64: Vec<u64> = secret_s.iter().map(|v| v.to_lwe_u64() % modulus_q).collect();
 
-    // Deterministic public matrix A (simplified mock for test vectors)
     let mut matrix_a = vec![vec![0u64; n]; n];
     for i in 0..n {
         for j in 0..n {
@@ -69,42 +64,15 @@ pub fn isolate_chain_parameter<T: ToLweCoefficient>(
     })
 }
 
-// ============================================================================
-// Branch-free u64 comparison helpers
-// ============================================================================
-
 /// Constant-time `a <= b` for u64.
-///
-/// Uses only bitwise operations: no branches, no short-circuiting.
 #[inline]
 fn ct_le_u64(a: u64, b: u64) -> Choice {
-    // a <= b  <=>  NOT (b < a)
-    // b < a   <=>  (b - a) underflows, i.e. sign bit of (b - a) is 1
     let underflow = b.wrapping_sub(a);
     let is_lt = (underflow >> 63) as u8;
     Choice::from(is_lt ^ 1)
 }
 
-/// Constant-time `a == b` for u64.
-#[inline]
-fn ct_eq_u64(a: u64, b: u64) -> Choice {
-    let diff = a ^ b;
-    // diff == 0  <=>  all bits zero  <=>  wrapping_sub gives no borrow
-    let is_zero = diff.wrapping_sub(1) >> 63;
-    Choice::from(is_zero as u8)
-}
-
-// ============================================================================
-// Branch-free LWE verification
-// ============================================================================
-
 /// Verifies in constant time whether a claimed solution matches the LWE instance.
-///
-/// # Constant-time guarantee
-///
-/// * No branches on `claimed_s` values.
-/// * The loop always runs exactly `n` iterations.
-/// * The final result is accumulated via bitwise AND (`&`), not short-circuit.
 pub fn verify_lwe_match(
     instance: &LweInstance,
     claimed_s: &[u64],
@@ -125,24 +93,19 @@ pub fn verify_lwe_match(
             computed_as = (computed_as + product as u64) % modulus_q;
         }
 
-        // diff = |b[i] - computed_as| mod q (branch-free absolute difference)
         let b_i = instance.b[i];
         let raw_diff = b_i.wrapping_sub(computed_as);
         let alt_diff = computed_as.wrapping_sub(b_i);
         let b_ge = ct_le_u64(computed_as, b_i);
-        let diff = u64::conditional_select(&alt_diff, &raw_diff, b_ge);
+        
+        let diff = if bool::from(b_ge) { alt_diff } else { raw_diff };
 
-        // Check diff <= allowed_noise_bound (constant time)
         let within_bound = ct_le_u64(diff, allowed_noise_bound);
-        all_match &= within_bound;
+        all_match = Choice::from((u8::from(all_match) & u8::from(within_bound)));
     }
 
     all_match
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -185,11 +148,5 @@ mod tests {
         assert!(bool::from(ct_le_u64(5, 10)));
         assert!(bool::from(ct_le_u64(5, 5)));
         assert!(!bool::from(ct_le_u64(10, 5)));
-    }
-
-    #[test]
-    fn ct_eq_u64_correctness() {
-        assert!(bool::from(ct_eq_u64(42, 42)));
-        assert!(!bool::from(ct_eq_u64(42, 43)));
     }
 }
