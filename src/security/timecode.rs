@@ -1,4 +1,3 @@
-```rust
 use sha2::Sha256;
 use zeroize::Zeroize;
 use hmac::Mac;
@@ -45,4 +44,3 @@ mod tests {
         assert_ne!(tc1.value, tc2.value);
     }
 }
-```
