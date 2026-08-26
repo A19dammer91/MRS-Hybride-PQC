@@ -3,7 +3,6 @@ use crypto_bigint::{U64, U256};
 use subtle::{Choice, ConditionallySelectable};
 use zeroize::Zeroize;
 
-/// Trait to convert a big integer into a u64 suitable for LWE coefficients.
 pub trait ToLweCoefficient: MrsInt {
     fn to_lwe_u64(&self) -> u64;
 }
@@ -23,7 +22,6 @@ impl ToLweCoefficient for U256 {
     }
 }
 
-/// LWE instance holding the masked chain parameters.
 #[derive(Debug, Clone, Zeroize)]
 #[zeroize(drop)]
 pub struct LweInstance {
@@ -31,7 +29,6 @@ pub struct LweInstance {
     pub public_matrix_a: Vec<Vec<u64>>,
 }
 
-/// Masks MRS parameters inside an LWE instance: b = (A·s + e) mod q.
 pub fn isolate_chain_parameter<T: ToLweCoefficient>(
     secret_s: &[T],
     noise_e: &[u64],
@@ -67,7 +64,6 @@ pub fn isolate_chain_parameter<T: ToLweCoefficient>(
     })
 }
 
-/// Constant-time `a <= b` for u64.
 #[inline]
 fn ct_le_u64(a: u64, b: u64) -> Choice {
     let underflow = b.wrapping_sub(a);
@@ -75,7 +71,6 @@ fn ct_le_u64(a: u64, b: u64) -> Choice {
     Choice::from(is_lt ^ 1)
 }
 
-/// Verifies in constant time whether a claimed solution matches the LWE instance.
 pub fn verify_lwe_match(
     instance: &LweInstance,
     claimed_s: &[u64],
@@ -103,16 +98,12 @@ pub fn verify_lwe_match(
         let diff = u64::conditional_select(&raw_diff, &alt_diff, b_ge);
 
         let within_bound = ct_le_u64(diff, allowed_noise_bound);
-        // Choice implementeert BitAnd<Choice, Output = Choice>; geen u8-conversie nodig
+        // Choice implements BitAnd<Choice, Output = Choice>
         all_match = all_match & within_bound;
     }
 
     all_match
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
