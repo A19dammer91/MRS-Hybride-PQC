@@ -100,10 +100,9 @@ pub fn verify_lwe_match(
         let raw_diff = b_i.wrapping_sub(computed_as);
         let alt_diff = computed_as.wrapping_sub(b_i);
         let b_ge = ct_le_u64(computed_as, b_i);
-        let diff = if bool::from(b_ge) { alt_diff } else { raw_diff };
+        let diff = u64::conditional_select(&raw_diff, &alt_diff, b_ge);
 
         let within_bound = ct_le_u64(diff, allowed_noise_bound);
-        // Fix: Gebruik u8::from voor Choice conversie
         let match_byte = u8::from(all_match) & u8::from(within_bound);
         all_match = Choice::from(match_byte);
     }
