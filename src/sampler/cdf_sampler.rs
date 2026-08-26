@@ -1,16 +1,16 @@
 //! Weighted CDF sampler and O(1) triangle fast-path for the MRS(19,9)
 //! Diophantine forest.
 //!
-//! Generic over `crypto_bigint` width (`MyU64`, `MyU256`, ...).
+//! Generic over `crypto_bigint` width (`U64`, `U256`, ...).
 
 use crate::core::diophantine::{
-    BranchFreeResult, DiophantinePair, MrsInt, ToBytes, MyU64, MyU256,
+    BranchFreeResult, DiophantinePair, MrsInt, ToBytes,
     calculate_anchor, calculate_popoviciu_cardinality, generate_representation_family,
     select_branch_free, check_frobenius_bound,
 };
-use crypto_bigint::{CheckedAdd, CheckedMul, CheckedSub, Integer, NonZero};
+use crypto_bigint::{CheckedAdd, CheckedMul, CheckedSub, NonZero, U64, U256};
 use rand::RngCore;
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
+use subtle::{Choice, ConditionallySelectable};
 use zeroize::Zeroize;
 use std::ops::Div;
 
@@ -29,17 +29,17 @@ pub trait FromRandom: MrsInt {
     fn from_random(rng: &mut impl RngCore) -> Self;
 }
 
-impl FromRandom for MyU64 {
+impl FromRandom for U64 {
     fn from_random(rng: &mut impl RngCore) -> Self {
-        MyU64::from(rng.next_u64())
+        Self::from(rng.next_u64())
     }
 }
 
-impl FromRandom for MyU256 {
+impl FromRandom for U256 {
     fn from_random(rng: &mut impl RngCore) -> Self {
         let mut bytes = [0u8; 32];
         rng.fill_bytes(&mut bytes);
-        let opt = MyU256::from_be_slice(&bytes);
+        let opt = Self::from_be_slice(&bytes);
         assert!(bool::from(opt.is_some()), "32 bytes always fit U256");
         opt.unwrap()
     }
@@ -51,13 +51,12 @@ impl<T> SamplerInt for T where T: MrsInt + FromRandom + ToBytes {}
 /// Securely samples a random value uniform below a public bound `upper_bound`.
 #[inline]
 pub fn uniform_below<T: SamplerInt>(upper_bound: &T, rng: &mut impl RngCore) -> T {
-    let zero = T::from(0u64);
+    let zero = T::ZERO;
     if bool::from(upper_bound.ct_eq(&zero)) {
         return zero;
     }
-    // Variant-time fallback acceptable for public constraints
     let random_val = T::from_random(rng);
-    let nine = nz::<T>(9); // Bound modulo infrastructure helper
+    let nine = nz::<T>(9);
     random_val.rem(NonZero::new(upper_bound.clone()).unwrap_or(nine))
 }
 
@@ -98,11 +97,11 @@ impl<T: SamplerInt> Drop for MrsChain<T> {
 
 #[inline]
 pub fn digital_root<T: SamplerInt>(n: &T) -> T {
-    let zero = T::from(0u64);
+    let zero = T::ZERO;
     let is_zero = n.ct_eq(&zero);
     let one = T::from(1u64);
     let nine = nz::<T>(9);
-    let n_minus_1 = n.clone().checked_sub(&one).unwrap_or_else(|| T::from(0u64));
+    let n_minus_1 = n.checked_sub(&one).unwrap_or(zero);
     let rem = n_minus_1.rem(nine);
     let dr = one.checked_add(&rem).expect("1 + rem <= 9");
     zero.conditional_select(&dr, !is_zero)
@@ -123,10 +122,10 @@ pub fn validate_triangle_condition<T: SamplerInt>(b: &T, x: &T) -> Choice {
 
 pub fn count_triangle_filtered<T: SamplerInt>(n: &T) -> T {
     let family = generate_representation_family(n);
-    let mut count = T::from(0u64);
+    let mut count = T::ZERO;
     for pair in family {
         let is_valid = validate_triangle_condition(&pair.b, n);
-        let increment = T::conditional_select(&T::from(0u64), &T::from(1u64), is_valid);
+        let increment = T::conditional_select(&T::ZERO, &T::from(1u64), is_valid);
         count = count.checked_add(&increment).expect("count overflow");
     }
     count
@@ -134,14 +133,14 @@ pub fn count_triangle_filtered<T: SamplerInt>(n: &T) -> T {
 
 /// O(1) Triangle Fast-Path sampling logic
 pub fn sample_triangle<T: SamplerInt>(n: &T, rng: &mut impl RngCore) -> BranchFreeResult<T> {
-    let zero = T::from(0u64);
+    let zero = T::ZERO;
     let one = T::from(1u64);
     let nine = nz::<T>(9);
-    let nineteen = nz::<T>(19);
+    let nineteen = T::from(19u64);
+    let two = T::from(2u64);
 
     let a0 = calculate_anchor(n);
     let b0 = calculate_popoviciu_cardinality(n);
-    let two = T::from(2u64);
 
     let dr_n = digital_root(n);
     let two_dr_n = two.checked_mul(&dr_n).expect("2*dr_n overflow");
@@ -149,29 +148,28 @@ pub fn sample_triangle<T: SamplerInt>(n: &T, rng: &mut impl RngCore) -> BranchFr
 
     let b0_lt_target = b0.ct_lt(&target_r);
     let b0_adjusted = b0.conditional_select(
-        &b0.checked_add(nine.as_ref()).expect("B0+9 overflow"),
+        &b0.checked_add(&nine.get()).expect("B0+9 overflow"),
         b0_lt_target,
     );
-    let k0 = b0_adjusted.checked_sub(&target_r).expect("adj B0 >= target").rem(nine.clone());
+    let k0 = b0_adjusted.checked_sub(&target_r).expect("adj B0 >= target").rem(nine);
 
     let r_n = calculate_popoviciu_cardinality(n);
-    let k_max = r_n.checked_sub(&one).unwrap_or_else(|| zero.clone());
+    let k_max = r_n.checked_sub(&one).unwrap_or(zero);
 
     let is_valid = !k0.ct_gt(&k_max);
 
-    let diff = k_max.checked_sub(&k0).unwrap_or_else(|| zero.clone())
-        .conditional_select(&zero, !is_valid);
-    let t_max = diff.div(nine.clone());
+    let diff = k_max.checked_sub(&k0).unwrap_or(zero).conditional_select(&zero, !is_valid);
+    let t_max = diff.div(nine);
 
     let t = uniform_below(&t_max, rng);
-    let nine_t = nine.as_ref().checked_mul(&t).expect("9t overflow");
+    let nine_t = nine.get().checked_mul(&t).expect("9t overflow");
     let k = k0.checked_add(&nine_t).expect("k0+9t overflow");
 
-    let nine_k = nine.as_ref().checked_mul(&k).expect("9k overflow");
+    let nine_k = nine.get().checked_mul(&k).expect("9k overflow");
     let a = a0.checked_add(&nine_k).expect("A0+9k overflow");
 
-    let nineteen_a = nineteen.as_ref().checked_mul(&a).expect("19A overflow");
-    let b = n.checked_sub(&nineteen_a).expect("N-19A underflow").div(nine.clone());
+    let nineteen_a = nineteen.checked_mul(&a).expect("19A overflow");
+    let b = n.checked_sub(&nineteen_a).expect("N-19A underflow").div(nine);
 
     let final_a = a.conditional_select(&zero, !is_valid);
     let final_b = b.conditional_select(&zero, !is_valid);
@@ -196,8 +194,8 @@ pub fn sample_three_layers<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore) ->
         if !bool::from(result.valid) {
             return None;
         }
-        current_n = result.pair.a.clone();
-        chain.push(result.pair.clone());
+        current_n = result.pair.a;
+        chain.push(result.pair);
     }
 
     Some(MrsChain { layers: chain, valid: Choice::from(1u8) })
@@ -223,26 +221,26 @@ pub fn sample_three_layers_cdf<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore
             if !bool::from(validate_triangle_condition(&pair.b, &current_n)) { continue; }
             if !is_last && !bool::from(check_ahead_valid(&pair.a)) { continue; }
             let w = if is_last { T::from(1u64) } else { count_triangle_filtered(&pair.a) };
-            if bool::from(w.ct_eq(&T::from(0u64))) { continue; }
-            candidates.push(pair.clone());
+            if bool::from(w.ct_eq(&T::ZERO)) { continue; }
+            candidates.push(pair);
             weights.push(w);
         }
 
         if candidates.is_empty() { return None; }
 
         let total_weight = weights.iter().cloned()
-            .fold(T::from(0u64), |acc, w| acc.checked_add(&w).expect("weight sum overflow"));
+            .fold(T::ZERO, |acc, w| acc.checked_add(&w).expect("weight sum overflow"));
         let r = uniform_below(&total_weight, rng);
 
-        let mut acc = T::from(0u64);
+        let mut acc = T::ZERO;
         let result = select_branch_free(&candidates, |_pair, idx| {
             acc = acc.checked_add(&weights[idx]).expect("acc overflow");
             r.ct_lt(&acc)
         });
 
         if !bool::from(result.valid) { return None; }
-        current_n = result.pair.a.clone();
-        chain.push(result.pair.clone());
+        current_n = result.pair.a;
+        chain.push(result.pair);
     }
 
     Some(MrsChain { layers: chain, valid: Choice::from(1u8) })
@@ -255,31 +253,31 @@ pub fn sample_three_layers_cdf<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::diophantine::MyU64;
+    use crypto_bigint::U64;
     use rand::rngs::OsRng;
 
     #[test]
     fn digital_root_correct() {
-        assert_eq!(digital_root(&MyU64::from(0u64)), MyU64::from(0u64));
-        assert_eq!(digital_root(&MyU64::from(9u64)), MyU64::from(9u64));
-        assert_eq!(digital_root(&MyU64::from(10u64)), MyU64::from(1u64));
-        assert_eq!(digital_root(&MyU64::from(144u64)), MyU64::from(9u64));
+        assert_eq!(digital_root(&U64::from(0u64)), U64::from(0u64));
+        assert_eq!(digital_root(&U64::from(9u64)), U64::from(9u64));
+        assert_eq!(digital_root(&U64::from(10u64)), U64::from(1u64));
+        assert_eq!(digital_root(&U64::from(144u64)), U64::from(9u64));
     }
 
     #[test]
     fn triangle_reconstructs_n() {
-        let n = MyU64::from(5_000_003u64);
+        let n = U64::from(5_000_003u64);
         let mut rng = OsRng;
         let res = sample_triangle(&n, &mut rng);
         assert!(bool::from(res.valid));
-        let lhs = MyU64::from(19u64).checked_mul(&res.pair.a).unwrap()
-            .checked_add(&MyU64::from(9u64).checked_mul(&res.pair.b).unwrap()).unwrap();
+        let lhs = U64::from(19u64).checked_mul(&res.pair.a).unwrap()
+            .checked_add(&U64::from(9u64).checked_mul(&res.pair.b).unwrap()).unwrap();
         assert_eq!(lhs, n);
     }
 
     #[test]
     fn triangle_satisfies_condition() {
-        let n = MyU64::from(5_000_003u64);
+        let n = U64::from(5_000_003u64);
         let mut rng = OsRng;
         let res = sample_triangle(&n, &mut rng);
         assert!(bool::from(res.valid));
@@ -288,11 +286,11 @@ mod tests {
 
     #[test]
     fn three_layers_nesting() {
-        let n = MyU64::from(200_001u64);
+        let n = U64::from(200_001u64);
         let mut rng = OsRng;
         let chain = sample_three_layers(&n, &mut rng).expect("sampling should succeed");
         assert_eq!(chain.layers.len(), 3);
         assert!(bool::from(n.ct_gt(&chain.layers[0].a)));
         assert!(bool::from(chain.layers[0].a.ct_gt(&chain.layers[1].a)));
     }
-}
+                                              }
