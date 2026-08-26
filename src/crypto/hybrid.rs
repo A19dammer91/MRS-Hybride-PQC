@@ -1,4 +1,3 @@
-```rust
 use crate::sampler::{MrsChain, SamplerInt};
 use pqc_kyber::KYBER_SSBYTES;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
@@ -68,4 +67,4 @@ pub fn decrypt_payload_hybrid(
     cipher.decrypt(nonce, aes_gcm::aead::Payload { msg: ciphertext, aad: associated_data })
         .map_err(|_| "AES-GCM decryption failed")
 }
-```
+
