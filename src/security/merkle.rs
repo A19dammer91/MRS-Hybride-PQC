@@ -84,15 +84,14 @@ pub fn verify_k_acceptance_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crypto_bigint::U64;
-    use crate::core::diophantine::DiophantinePair;
+    use crate::core::diophantine::{DiophantinePair, MyU64};
 
     #[test]
     fn hash_chain_deterministic() {
         let chain = MrsChain {
             layers: vec![
-                DiophantinePair { a: U64::from(19u64), b: U64::from(9u64) },
-                DiophantinePair { a: U64::from(5u64), b: U64::from(3u64) },
+                DiophantinePair { a: MyU64::from(19u64), b: MyU64::from(9u64) },
+                DiophantinePair { a: MyU64::from(5u64), b: MyU64::from(3u64) },
             ],
             valid: subtle::Choice::from(1u8),
         };
@@ -109,4 +108,3 @@ mod tests {
         assert_ne!(root, [0u8; 32]);
     }
 }
-
