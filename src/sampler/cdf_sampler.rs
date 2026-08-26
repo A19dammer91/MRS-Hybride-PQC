@@ -1,14 +1,14 @@
 //! Weighted CDF sampler and O(1) triangle fast-path for the MRS(19,9)
 //! Diophantine forest.
 //!
-//! Generic over `crypto_bigint` width (`U64`, `U256`, ...).
+//! Generic over `crypto_bigint` width (`MyU64`, `MyU256`, ...).
 
 use crate::core::diophantine::{
-    BranchFreeResult, DiophantinePair, MrsInt, ToBytes,
+    BranchFreeResult, DiophantinePair, MrsInt, ToBytes, MyU64, MyU256,
     calculate_anchor, calculate_popoviciu_cardinality, generate_representation_family,
     select_branch_free, check_frobenius_bound,
 };
-use crypto_bigint::{CheckedAdd, CheckedMul, CheckedSub, Integer, NonZero, Uint};
+use crypto_bigint::{CheckedAdd, CheckedMul, CheckedSub, Integer, NonZero};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use zeroize::Zeroize;
@@ -29,17 +29,17 @@ pub trait FromRandom: MrsInt {
     fn from_random(rng: &mut impl RngCore) -> Self;
 }
 
-impl FromRandom for crypto_bigint::U64 {
+impl FromRandom for MyU64 {
     fn from_random(rng: &mut impl RngCore) -> Self {
-        Self::from(rng.next_u64())
+        MyU64::from(rng.next_u64())
     }
 }
 
-impl FromRandom for crypto_bigint::U256 {
+impl FromRandom for MyU256 {
     fn from_random(rng: &mut impl RngCore) -> Self {
         let mut bytes = [0u8; 32];
         rng.fill_bytes(&mut bytes);
-        let opt = Self::from_be_slice(&bytes);
+        let opt = MyU256::from_be_slice(&bytes);
         assert!(bool::from(opt.is_some()), "32 bytes always fit U256");
         opt.unwrap()
     }
@@ -255,31 +255,31 @@ pub fn sample_three_layers_cdf<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crypto_bigint::U64;
+    use crate::core::diophantine::MyU64;
     use rand::rngs::OsRng;
 
     #[test]
     fn digital_root_correct() {
-        assert_eq!(digital_root(&U64::from(0u64)), U64::from(0u64));
-        assert_eq!(digital_root(&U64::from(9u64)), U64::from(9u64));
-        assert_eq!(digital_root(&U64::from(10u64)), U64::from(1u64));
-        assert_eq!(digital_root(&U64::from(144u64)), U64::from(9u64));
+        assert_eq!(digital_root(&MyU64::from(0u64)), MyU64::from(0u64));
+        assert_eq!(digital_root(&MyU64::from(9u64)), MyU64::from(9u64));
+        assert_eq!(digital_root(&MyU64::from(10u64)), MyU64::from(1u64));
+        assert_eq!(digital_root(&MyU64::from(144u64)), MyU64::from(9u64));
     }
 
     #[test]
     fn triangle_reconstructs_n() {
-        let n = U64::from(5_000_003u64);
+        let n = MyU64::from(5_000_003u64);
         let mut rng = OsRng;
         let res = sample_triangle(&n, &mut rng);
         assert!(bool::from(res.valid));
-        let lhs = U64::from(19u64).checked_mul(&res.pair.a).unwrap()
-            .checked_add(&U64::from(9u64).checked_mul(&res.pair.b).unwrap()).unwrap();
+        let lhs = MyU64::from(19u64).checked_mul(&res.pair.a).unwrap()
+            .checked_add(&MyU64::from(9u64).checked_mul(&res.pair.b).unwrap()).unwrap();
         assert_eq!(lhs, n);
     }
 
     #[test]
     fn triangle_satisfies_condition() {
-        let n = U64::from(5_000_003u64);
+        let n = MyU64::from(5_000_003u64);
         let mut rng = OsRng;
         let res = sample_triangle(&n, &mut rng);
         assert!(bool::from(res.valid));
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn three_layers_nesting() {
-        let n = U64::from(200_001u64);
+        let n = MyU64::from(200_001u64);
         let mut rng = OsRng;
         let chain = sample_three_layers(&n, &mut rng).expect("sampling should succeed");
         assert_eq!(chain.layers.len(), 3);
