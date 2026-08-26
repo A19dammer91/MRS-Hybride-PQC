@@ -1,6 +1,4 @@
-//! Diophantine core, generic over any `crypto_bigint` unsigned integer type
-//! (e.g. `U64`, `U128`, `U256`, ...) via the small [`MrsInt`] trait defined
-//! below — not via `crypto_bigint::Integer`.
+//! Diophantine core, generic over any `crypto_bigint` unsigned integer type.
 
 use crypto_bigint::{CheckedAdd, CheckedMul, CheckedSub, ConstZero, NonZero};
 use core::ops::{Div, Rem};
@@ -11,11 +9,9 @@ use zeroize::Zeroize;
 // The MrsInt trait
 // ============================================================================
 
-/// Everything the MRS(19,9) algebra needs from an integer type, and nothing
-/// more. Implemented below for `crypto_bigint::{U64, U256}`.
-///
-/// `ZERO` komt van het supertrait `ConstZero`; we definieren het hier NIET
-/// opnieuw om ambiguiteit (E0034) te voorkomen.
+/// Everything the MRS(19,9) algebra needs from an integer type.
+/// `ZERO` comes from the supertrait `ConstZero`; we do NOT redefine it here
+/// to avoid E0034 ambiguity.
 pub trait MrsInt:
     Clone
     + Copy
@@ -39,26 +35,22 @@ impl MrsInt for crypto_bigint::U64 {}
 
 impl MrsInt for crypto_bigint::U256 {}
 
-/// Builds a `NonZero<T>` from a small compile-time-known constant.
 #[inline]
 fn nz<T: MrsInt>(val: u64) -> NonZero<T> {
     let ct = NonZero::new(T::from(val));
     Option::from(ct).unwrap_or_else(|| panic!("constant {val} must be non-zero"))
 }
 
-/// Unwraps a `CheckedAdd`/`CheckedSub`/`CheckedMul` result.
 #[inline]
 fn expect_ct<T>(ct: crypto_bigint::subtle::CtOption<T>, msg: &str) -> T {
     Option::from(ct).unwrap_or_else(|| panic!("{msg}"))
 }
 
 // ============================================================================
-// DiophantinePair — Copy + Zeroize (geen Drop; Copy is vereist voor
-// ConditionallySelectable en maakt branch-free selectie mogelijk)
+// DiophantinePair — Copy + Zeroize (no Drop; Copy is required by
+// ConditionallySelectable and enables branch-free selection)
 // ============================================================================
 
-/// A single representation (A, B) at one layer, generic over the integer
-/// width `T`.
 #[derive(Debug, Clone, Copy)]
 pub struct DiophantinePair<T: MrsInt> {
     pub a: T,
@@ -87,7 +79,6 @@ impl<T: MrsInt> ConstantTimeEq for DiophantinePair<T> {
     }
 }
 
-/// Converts a value to big-endian bytes, for HKDF input / hashing.
 pub trait ToBytes {
     fn to_be_bytes_vec(&self) -> Vec<u8>;
 }
@@ -122,7 +113,6 @@ pub fn calculate_anchor<T: MrsInt>(n: &T) -> T {
 pub fn calculate_popoviciu_cardinality<T: MrsInt>(n: &T) -> T {
     let a0 = calculate_anchor(n);
     let nineteen = T::from(19u64);
-
     let subtrahend = expect_ct(nineteen.checked_mul(&a0), "19 * A0 overflow");
 
     if bool::from(n.ct_lt(&subtrahend)) {
@@ -130,7 +120,6 @@ pub fn calculate_popoviciu_cardinality<T: MrsInt>(n: &T) -> T {
     }
 
     let diff = expect_ct(n.checked_sub(&subtrahend), "checked above: n >= subtrahend");
-
     let quotient = diff.div(nz::<T>(171));
     expect_ct(quotient.checked_add(&T::from(1u64)), "R(N) + 1 overflow")
 }
@@ -154,18 +143,16 @@ pub fn generate_representation_family<T: MrsInt>(n: &T) -> Vec<DiophantinePair<T
         let b = remainder.div(nine_nz);
 
         family.push(DiophantinePair { a, b });
-
-        k = expect_ct(k.checked_add(&T::from(1u64)), "k overflow — R(N) exceeds this width");
+        k = expect_ct(k.checked_add(&T::from(1u64)), "k overflow");
     }
 
     family
 }
 
 // ============================================================================
-// Branch-free selection helpers — Copy + Zeroize (geen Drop)
+// Branch-free selection helpers — Copy + Zeroize (no Drop)
 // ============================================================================
 
-/// The result of a branch-free scan.
 #[derive(Debug, Clone, Copy)]
 pub struct BranchFreeResult<T: MrsInt> {
     pub pair: DiophantinePair<T>,
@@ -178,7 +165,6 @@ impl<T: MrsInt> Zeroize for BranchFreeResult<T> {
     }
 }
 
-/// Scans the entire slice in O(n) with no early exit.
 pub fn select_branch_free<T: MrsInt, F>(
     items: &[DiophantinePair<T>],
     mut predicate: F,
@@ -203,7 +189,6 @@ where
     BranchFreeResult { pair: result, valid: found }
 }
 
-/// As [`select_branch_free`], but also returns the selected index.
 pub fn select_branch_free_with_index<T: MrsInt, F>(
     items: &[DiophantinePair<T>],
     mut predicate: F,
@@ -291,4 +276,4 @@ mod tests {
         assert!(bool::from(res.valid));
         assert_eq!(res.pair.a, target);
     }
-            }
+                       }
