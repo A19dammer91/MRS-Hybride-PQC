@@ -1,4 +1,3 @@
-```rust
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use crypto_bigint::{U64, U256};
 use mrs_auth_pqc::sampler::sample_three_layers;
@@ -42,4 +41,3 @@ fn bench_sampler_u256(c: &mut Criterion) {
 
 criterion_group!(benches, bench_sampler_u64, bench_sampler_u256);
 criterion_main!(benches);
-```
