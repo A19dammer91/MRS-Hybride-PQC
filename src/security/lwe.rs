@@ -103,8 +103,8 @@ pub fn verify_lwe_match(
         let diff = u64::conditional_select(&raw_diff, &alt_diff, b_ge);
 
         let within_bound = ct_le_u64(diff, allowed_noise_bound);
-        let match_byte = u8::from(all_match) & u8::from(within_bound);
-        all_match = Choice::from(match_byte);
+        // Choice implementeert BitAnd<Choice, Output = Choice>; geen u8-conversie nodig
+        all_match = all_match & within_bound;
     }
 
     all_match
