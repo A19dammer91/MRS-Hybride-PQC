@@ -18,7 +18,7 @@ path = "src/lib.rs"
 
 [dependencies]
 pqc_kyber     = { version = "0.7", features = ["std", "kyber1024"] }
-crypto-bigint = { version = "0.6", features = ["rand_core"] }
+crypto-bigint = { version = "0.6", features = ["generic-array", "zeroize"] }
 subtle        = { version = "2.6", default-features = false }
 zeroize       = { version = "1.8", features = ["derive"] }
 sha2          = "0.10"
