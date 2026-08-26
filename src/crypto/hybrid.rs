@@ -17,7 +17,7 @@ pub struct HybridCiphertextPacket {
 
 /// Derives the hybrid AES-256 key from Kyber SS + MRS chain + session_id.
 ///
-/// Generic over `T: SamplerInt` so it works for both `MyU64` and `MyU256`.
+/// Generic over `T: SamplerInt` so it works for both `U64` and `U256`.
 pub fn derive_hybrid_key<T: SamplerInt>(
     kyber_ss: &[u8; KYBER_SSBYTES],
     mrs_chain: &MrsChain<T>,
