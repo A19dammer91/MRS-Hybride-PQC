@@ -1,4 +1,3 @@
-```rust
 //! Diophantine core, generic over any integer type from the `crypto_bigint`
 //! crate (e.g. `U64`, `U128`, `U256`, ...).
 //!
@@ -320,4 +319,3 @@ mod tests {
         assert!(!bool::from(p1.ct_eq(&p3)));
     }
 }
-```
