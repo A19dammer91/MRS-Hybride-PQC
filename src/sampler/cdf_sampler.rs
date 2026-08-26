@@ -22,17 +22,17 @@ fn nz<T: MrsInt>(val: u64) -> NonZero<T> {
 // ============================================================================
 
 pub trait FromRandom: MrsInt {
-    fn from_random(rng: &mut impl RngCore) -> Self;
+    fn from_random<R: RngCore>(rng: &mut R) -> Self;
 }
 
 impl FromRandom for U64 {
-    fn from_random(rng: &mut impl RngCore) -> Self {
+    fn from_random<R: RngCore>(rng: &mut R) -> Self {
         Self::from(rng.next_u64())
     }
 }
 
 impl FromRandom for U256 {
-    fn from_random(rng: &mut impl RngCore) -> Self {
+    fn from_random<R: RngCore>(rng: &mut R) -> Self {
         let mut bytes = [0u8; 32];
         rng.fill_bytes(&mut bytes);
         let ct = Self::from_be_slice(&bytes);
@@ -62,7 +62,7 @@ pub fn check_ahead_valid<T: SamplerInt>(n: &T) -> Choice {
 }
 
 // ============================================================================
-// MrsChain
+// MrsChain — Zeroize + Drop (Vec is niet Copy, dus hier wel Drop)
 // ============================================================================
 
 #[derive(Debug, Clone)]
@@ -99,7 +99,7 @@ pub fn digital_root<T: SamplerInt>(n: &T) -> T {
     let n_minus_1 = n.checked_sub(&one).unwrap_or(zero);
     let rem = n_minus_1.rem(nine);
     let dr = one.checked_add(&rem).expect("1 + rem <= 9");
-    T::conditional_select(&zero, &dr, !is_zero)  // Fix: T::conditional_select
+    T::conditional_select(&zero, &dr, !is_zero)
 }
 
 // ============================================================================
@@ -292,5 +292,14 @@ mod tests {
         assert_eq!(chain.layers.len(), 3);
         assert!(bool::from(n.ct_gt(&chain.layers[0].a)));
         assert!(bool::from(chain.layers[0].a.ct_gt(&chain.layers[1].a)));
+    }
+
+    #[test]
+    fn sampler_is_not_deterministic() {
+        let n = U64::from(10_000_007u64);
+        let mut rng = OsRng;
+        let c1 = sample_three_layers(&n, &mut rng).unwrap();
+        let c2 = sample_three_layers(&n, &mut rng).unwrap();
+        assert_ne!(c1.layers[0].a, c2.layers[0].a);
     }
 }
