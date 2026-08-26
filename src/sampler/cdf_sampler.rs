@@ -218,7 +218,7 @@ pub fn sample_three_layers<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore) ->
             return None;
         }
         current_n = result.pair.a.clone();
-        chain.push(result.pair);
+        chain.push(result.pair.clone());
     }
 
     Some(MrsChain { layers: chain, valid: Choice::from(1u8) })
@@ -267,7 +267,7 @@ pub fn sample_three_layers_cdf<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore
 
         if !bool::from(result.valid) { return None; }
         current_n = result.pair.a.clone();
-        chain.push(result.pair);
+        chain.push(result.pair.clone());
     }
 
     Some(MrsChain { layers: chain, valid: Choice::from(1u8) })
