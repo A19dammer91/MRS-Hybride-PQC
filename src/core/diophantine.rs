@@ -352,7 +352,6 @@ mod tests {
 
     #[test]
     fn family_reconstructs_n_u256() {
-        // Cryptographic-scale N, well beyond u64::MAX.
         let n = U256::from_be_hex(
             "0000000000000000000000000000000000000000000000000000E8D4A51000",
         );
@@ -391,5 +390,4 @@ mod tests {
         assert!(bool::from(p1.ct_eq(&p2)));
         assert!(!bool::from(p1.ct_eq(&p3)));
     }
-    }
-                                                                   
+}
