@@ -1,15 +1,23 @@
 //! Diophantine core, generic over any integer type from the `crypto_bigint`
 //! crate (e.g. `U64`, `U128`, `U256`, ...).
-//!
-//! # Branch-free selection
-//!
-//! [`select_branch_free`] scans an entire slice in O(n) with *no early
-//! exit*, accumulating the chosen element via `ConditionallySelectable`.
 
-use crypto_bigint::{CheckedMul, Integer, NonZero};
+use crypto_bigint::{CheckedMul, Integer, NonZero, U64, U256};
 use core::ops::{Div, Rem};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use zeroize::Zeroize;
+
+// Zeroize implementatie voor U64 en U256
+impl Zeroize for U64 {
+    fn zeroize(&mut self) {
+        *self = U64::from(0u64);
+    }
+}
+
+impl Zeroize for U256 {
+    fn zeroize(&mut self) {
+        *self = U256::from(0u64);
+    }
+}
 
 #[inline]
 fn nz<T: MrsInt>(val: u64) -> NonZero<T> {
@@ -24,6 +32,7 @@ pub trait MrsInt:
     + Div<NonZero<Self>, Output = Self>
     + Rem<NonZero<Self>, Output = Self>
     + Clone
+    + Copy  // Copy toegevoegd
     + Zeroize
     + ConditionallySelectable
     + ConstantTimeEq
@@ -35,6 +44,7 @@ impl<T> MrsInt for T where
         + Div<NonZero<T>, Output = T>
         + Rem<NonZero<T>, Output = T>
         + Clone
+        + Copy
         + Zeroize
         + ConditionallySelectable
         + ConstantTimeEq
@@ -46,23 +56,23 @@ pub trait ToBytes: MrsInt {
     fn to_be_bytes_vec(&self) -> Vec<u8>;
 }
 
-impl ToBytes for crypto_bigint::U64 {
+impl ToBytes for U64 {
     fn to_be_bytes_vec(&self) -> Vec<u8> {
         self.to_be_bytes().to_vec()
     }
 }
 
-impl ToBytes for crypto_bigint::U256 {
+impl ToBytes for U256 {
     fn to_be_bytes_vec(&self) -> Vec<u8> {
         self.to_be_bytes().to_vec()
     }
 }
 
 // ============================================================================
-// DiophantinePair
+// DiophantinePair - Copy toegevoegd
 // ============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct DiophantinePair<T: MrsInt> {
     pub a: T,
     pub b: T,
@@ -100,7 +110,7 @@ impl<T: MrsInt> ConstantTimeEq for DiophantinePair<T> {
 // Branch-free result type
 // ============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BranchFreeResult<T: MrsInt> {
     pub pair: DiophantinePair<T>,
     pub valid: Choice,
@@ -119,7 +129,7 @@ impl<T: MrsInt> Drop for BranchFreeResult<T> {
 }
 
 // ============================================================================
-// Core algebra
+// Core algebra (blijft hetzelfde)
 // ============================================================================
 
 #[inline]
@@ -206,7 +216,7 @@ where
             valid: Choice::from(0u8),
         };
     }
-    let mut result = DiophantinePair { a: items[0].a.clone(), b: items[0].b.clone() };
+    let mut result = items[0];
     let mut found = Choice::from(0u8);
     for (idx, item) in items.iter().enumerate() {
         let cond = predicate(item, idx);
@@ -230,7 +240,7 @@ where
             valid: Choice::from(0u8),
         }, 0);
     }
-    let mut result = DiophantinePair { a: items[0].a.clone(), b: items[0].b.clone() };
+    let mut result = items[0];
     let mut found = Choice::from(0u8);
     let mut selected_idx = 0usize;
     for (idx, item) in items.iter().enumerate() {
@@ -244,7 +254,7 @@ where
 }
 
 // ============================================================================
-// Tests
+// Tests (blijven hetzelfde)
 // ============================================================================
 
 #[cfg(test)]
