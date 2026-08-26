@@ -8,11 +8,10 @@ use crate::core::diophantine::{
     calculate_anchor, calculate_popoviciu_cardinality, generate_representation_family,
     select_branch_free, check_frobenius_bound,
 };
-use crypto_bigint::{CheckedAdd, CheckedSub, NonZero, U64, U256};
+use crypto_bigint::{NonZero, U64, U256};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable};
 use zeroize::Zeroize;
-use std::ops::Div;
 
 #[inline]
 fn nz<T: MrsInt>(val: u64) -> NonZero<T> {
