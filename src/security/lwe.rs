@@ -11,13 +11,18 @@ pub trait ToLweCoefficient: MrsInt {
 
 impl ToLweCoefficient for U64 {
     fn to_lwe_u64(&self) -> u64 {
-        self.to_u64()
+        // U64 heeft geen to_u64(), gebruik as_u64() of converteer via to_le_bytes()
+        let bytes = self.to_be_bytes();
+        u64::from_be_bytes(bytes)
     }
 }
 
 impl ToLweCoefficient for U256 {
     fn to_lwe_u64(&self) -> u64 {
-        self.to_u64()
+        // Voor U256 nemen we de laagste 64 bits
+        let bytes = self.to_be_bytes();
+        let lower_bytes: [u8; 8] = bytes[24..32].try_into().unwrap();
+        u64::from_be_bytes(lower_bytes)
     }
 }
 
@@ -134,7 +139,8 @@ pub fn verify_lwe_match(
 
         // Check diff <= allowed_noise_bound (constant time)
         let within_bound = ct_le_u64(diff, allowed_noise_bound);
-        let match_byte = u8::from(all_match) & u8::from(within_bound);
+        // Fix: Gebruik to_bits() voor Choice conversie
+        let match_byte = all_match.to_bits() & within_bound.to_bits();
         all_match = Choice::from(match_byte);
     }
 
