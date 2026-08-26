@@ -4,7 +4,7 @@ version      = "0.3.0"
 edition      = "2021"
 authors      = ["Bilal El Issaoui"]
 description  = "Research-grade hybrid post-quantum KEM with Diophantine deniability. Not audited for production use."
-license      = "Apache-2.0"
+license      = "MIT"
 repository   = "https://github.com/A19dammer91/MRS-Hybride-PQC"
 documentation = "https://docs.rs/mrs_auth_pqc"
 readme       = "README.md"
@@ -17,8 +17,8 @@ name = "mrs_auth_pqc"
 path = "src/lib.rs"
 
 [dependencies]
-pqc_kyber     = { version = "0.7", features = ["std", "kyber1024"] }
-crypto-bigint = { version = "0.6", features = ["generic-array", "zeroize"] }
+pqc-kyber     = { version = "0.7", features = ["std", "kyber1024"] }
+crypto-bigint = { version = "0.6", features = ["zeroize"] }
 subtle        = { version = "2.6", default-features = false }
 zeroize       = { version = "1.8", features = ["derive"] }
 sha2          = "0.10"
