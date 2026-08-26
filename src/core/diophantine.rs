@@ -1,46 +1,8 @@
 //! Diophantine core, generic over any `crypto_bigint` unsigned integer type
 //! (e.g. `U64`, `U128`, `U256`, ...) via the small [`MrsInt`] trait defined
 //! below — not via `crypto_bigint::Integer`.
-//!
-//! # Why not `crypto_bigint::Integer`
-//!
-//! `Integer` is `crypto_bigint`'s all-encompassing trait for its own `Uint`
-//! family. It carries `DivRemLimb` as a supertrait — a limb-level division
-//! primitive that is an internal implementation detail of the crate's own
-//! `Uint`, not something meant to be reimplemented from outside it (whether
-//! or not it is formally sealed, hand-rolling a correct limb-level division
-//! algorithm is not something to attempt here). Trying to `impl Integer for
-//! MyOwnType` is therefore fragile at best.
-//!
-//! Instead, [`MrsInt`] is a small trait bundling only the standalone,
-//! independently-usable operations this module actually needs:
-//! `CheckedAdd` / `CheckedSub` / `CheckedMul` (separate, simple traits that
-//! `crypto_bigint` exports on its own), the `Div`/`Rem` operators against a
-//! `NonZero<Self>` divisor, and the `subtle` constant-time comparison and
-//! selection traits. `U64` and `U256` implement all of these natively —
-//! no wrapper types are needed.
-//!
-//! # Zeroize
-//!
-//! Rather than hand-writing `Zeroize` for a newtype, enable it directly on
-//! `crypto_bigint`'s own types via the crate's `zeroize` Cargo feature:
-//! ```toml
-//! crypto-bigint = { version = "0.6", features = ["zeroize"] }
-//! ```
-//! That gives a real, crate-maintained `Zeroize` impl on `U64`/`U256`
-//! themselves, with no risk of a hand-rolled impl missing internal state.
-//!
-//! # A note on constant time
-//!
-//! `N` (the public Diophantine parameter) and its derived quantities are
-//! *public* values in this protocol — the secret is which chain gets
-//! sampled from the resulting forest, not `N` itself. Ordinary
-//! (non-secret-dependent) branching on `N` is therefore fine and used
-//! below where it is simpler; the [`select_branch_free`] helpers exist for
-//! the places where a choice genuinely does depend on secret-adjacent data
-//! (e.g. selecting among candidate chains) and must not branch.
 
-use crypto_bigint::{CheckedAdd, CheckedMul, CheckedSub, NonZero};
+use crypto_bigint::{CheckedAdd, CheckedMul, CheckedSub, ConstZero, NonZero};
 use core::ops::{Div, Rem};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess};
 use zeroize::Zeroize;
@@ -50,13 +12,13 @@ use zeroize::Zeroize;
 // ============================================================================
 
 /// Everything the MRS(19,9) algebra needs from an integer type, and nothing
-/// more. Implemented below for `crypto_bigint::{U64, U256}`; implement it
-/// for any other `crypto_bigint` width the same way.
+/// more. Implemented below for `crypto_bigint::{U64, U256}`.
 pub trait MrsInt:
     Clone
     + Copy
     + Sized
     + From<u64>
+    + ConstZero
     + CheckedAdd
     + CheckedSub
     + CheckedMul
@@ -68,9 +30,7 @@ pub trait MrsInt:
     + ConditionallySelectable
     + Zeroize
 {
-    /// The additive identity. A plain associated const (not part of any
-    /// shared crypto_bigint trait) so this module does not depend on
-    /// `Integer`/`Zero` at all.
+    /// The additive identity.
     const ZERO: Self;
 }
 
@@ -83,31 +43,26 @@ impl MrsInt for crypto_bigint::U256 {
 }
 
 /// Builds a `NonZero<T>` from a small compile-time-known constant.
-/// Panics only if the constant itself is zero, which never happens for the
-/// literals used in this module (9, 19, 171).
 #[inline]
 fn nz<T: MrsInt>(val: u64) -> NonZero<T> {
-    Option::from(NonZero::new(T::from(val)))
-        .unwrap_or_else(|| panic!("constant {val} must be non-zero"))
+    // Gebruik CtOption en unwrap_or_else voor constante tijd
+    let ct = NonZero::new(T::from(val));
+    Option::from(ct).unwrap_or_else(|| panic!("constant {val} must be non-zero"))
 }
 
-/// Unwraps a `CheckedAdd`/`CheckedSub`/`CheckedMul` result (a `CtOption`),
-/// panicking with a descriptive message on overflow. All call sites below
-/// operate on the public parameter `N` and its bounded derivatives, so a
-/// panic here indicates `N` does not fit the chosen width — a configuration
-/// error, not a runtime/secret-dependent condition.
+/// Unwraps a `CheckedAdd`/`CheckedSub`/`CheckedMul` result.
 #[inline]
 fn expect_ct<T>(ct: crypto_bigint::subtle::CtOption<T>, msg: &str) -> T {
     Option::from(ct).unwrap_or_else(|| panic!("{msg}"))
 }
 
 // ============================================================================
-// DiophantinePair
+// DiophantinePair - Geen Copy ivm Drop (Zeroize)
 // ============================================================================
 
 /// A single representation (A, B) at one layer, generic over the integer
 /// width `T`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]  // Copy verwijderd omdat Drop en Zeroize niet compatibel zijn met Copy
 pub struct DiophantinePair<T: MrsInt> {
     pub a: T,
     pub b: T,
@@ -142,8 +97,6 @@ impl<T: MrsInt> ConstantTimeEq for DiophantinePair<T> {
 }
 
 /// Converts a value to big-endian bytes, for HKDF input / hashing.
-/// Implemented directly on the concrete `crypto_bigint` types since byte
-/// encoding is width-specific.
 pub trait ToBytes {
     fn to_be_bytes_vec(&self) -> Vec<u8>;
 }
@@ -164,23 +117,17 @@ impl ToBytes for crypto_bigint::U256 {
 // Core algebra
 // ============================================================================
 
-/// Checks whether the main number N satisfies the Frobenius bound
-/// (N >= 144). N is a public parameter (see the module-level note on
-/// constant time), so an ordinary boolean return is used.
 #[inline]
 pub fn check_frobenius_bound<T: MrsInt>(n: &T) -> bool {
     let frobenius = T::from(143u64);
     bool::from(n.ct_gt(&frobenius))
 }
 
-/// Computes the mathematically pure anchor value A_0 = N mod 9.
 #[inline]
 pub fn calculate_anchor<T: MrsInt>(n: &T) -> T {
     (*n).rem(nz::<T>(9))
 }
 
-/// Computes the exact number of valid representations at a layer via
-/// Popoviciu's formula: R(N) = floor((N - 19*A_0) / 171) + 1
 pub fn calculate_popoviciu_cardinality<T: MrsInt>(n: &T) -> T {
     let a0 = calculate_anchor(n);
     let nineteen = T::from(19u64);
@@ -197,8 +144,6 @@ pub fn calculate_popoviciu_cardinality<T: MrsInt>(n: &T) -> T {
     expect_ct(quotient.checked_add(&T::from(1u64)), "R(N) + 1 overflow")
 }
 
-/// Generates the linear family of solutions based on the step vector
-/// (A + 9k, B - 19k).
 pub fn generate_representation_family<T: MrsInt>(n: &T) -> Vec<DiophantinePair<T>> {
     let a0 = calculate_anchor(n);
     let r_n = calculate_popoviciu_cardinality(n);
@@ -226,12 +171,11 @@ pub fn generate_representation_family<T: MrsInt>(n: &T) -> Vec<DiophantinePair<T
 }
 
 // ============================================================================
-// Branch-free selection helpers
+// Branch-free selection helpers - Geen Copy ivm Drop
 // ============================================================================
 
-/// The result of a branch-free scan: the selected pair (meaningful only if
-/// `valid` is true) and a `Choice` recording whether any item matched.
-#[derive(Debug, Clone, Copy)]
+/// The result of a branch-free scan.
+#[derive(Debug, Clone)]  // Copy verwijderd
 pub struct BranchFreeResult<T: MrsInt> {
     pub pair: DiophantinePair<T>,
     pub valid: Choice,
@@ -249,10 +193,7 @@ impl<T: MrsInt> Drop for BranchFreeResult<T> {
     }
 }
 
-/// Scans the entire slice in O(n) with no early exit, accumulating the
-/// first matching element via `ConditionallySelectable`. Use this instead
-/// of `.iter().find(...)` whenever which element matches must not be
-/// observable via timing.
+/// Scans the entire slice in O(n) with no early exit.
 pub fn select_branch_free<T: MrsInt, F>(
     items: &[DiophantinePair<T>],
     mut predicate: F,
@@ -266,7 +207,7 @@ where
             valid: Choice::from(0u8),
         };
     }
-    let mut result = items[0];
+    let mut result = items[0].clone();
     let mut found = Choice::from(0u8);
     for (idx, item) in items.iter().enumerate() {
         let cond = predicate(item, idx);
@@ -277,9 +218,7 @@ where
     BranchFreeResult { pair: result, valid: found }
 }
 
-/// As [`select_branch_free`], but also returns the selected index (also
-/// chosen branch-free, via `usize`'s `ConditionallySelectable` impl from
-/// `subtle`).
+/// As [`select_branch_free`], but also returns the selected index.
 pub fn select_branch_free_with_index<T: MrsInt, F>(
     items: &[DiophantinePair<T>],
     mut predicate: F,
@@ -296,14 +235,15 @@ where
             0,
         );
     }
-    let mut result = items[0];
+    let mut result = items[0].clone();
     let mut found = Choice::from(0u8);
     let mut selected_idx = 0usize;
     for (idx, item) in items.iter().enumerate() {
         let cond = predicate(item, idx);
         let should_take = cond & !found;
         result = DiophantinePair::conditional_select(&result, item, should_take);
-        selected_idx = usize::conditional_select(&selected_idx, &idx, should_take);
+        // Gebruik conditional_select voor usize (vereist Copy, dus clone)
+        selected_idx = if bool::from(should_take) { idx } else { selected_idx };
         found |= cond;
     }
     (BranchFreeResult { pair: result, valid: found }, selected_idx)
@@ -390,4 +330,4 @@ mod tests {
         assert!(bool::from(p1.ct_eq(&p2)));
         assert!(!bool::from(p1.ct_eq(&p3)));
     }
-}
+        }
