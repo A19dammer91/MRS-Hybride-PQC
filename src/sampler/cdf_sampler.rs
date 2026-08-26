@@ -1,4 +1,3 @@
-```rust
 //! Weighted CDF sampler and O(1) triangle fast-path for the MRS(19,9)
 //! Diophantine forest.
 //!
@@ -347,4 +346,3 @@ mod tests {
         assert!(cdf.is_some());
     }
 }
-```
