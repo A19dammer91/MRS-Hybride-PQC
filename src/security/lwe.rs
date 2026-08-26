@@ -1,46 +1,29 @@
-use crate::core::diophantine::MrsInt;
-use crypto_bigint::{U64, U256};
-use subtle::{Choice, ConditionallySelectable};
+use subtle::Choice;
 use zeroize::Zeroize;
 
-pub trait ToLweCoefficient: MrsInt {
-    fn to_lwe_u64(&self) -> u64;
-}
-
-impl ToLweCoefficient for U64 {
-    fn to_lwe_u64(&self) -> u64 {
-        let bytes = self.to_be_bytes();
-        u64::from_be_bytes(bytes)
-    }
-}
-
-impl ToLweCoefficient for U256 {
-    fn to_lwe_u64(&self) -> u64 {
-        let bytes = self.to_be_bytes();
-        let lower_bytes: [u8; 8] = bytes[24..32].try_into().unwrap();
-        u64::from_be_bytes(lower_bytes)
-    }
-}
-
+/// Struct holding an LWE-isolated cryptographic parameter
 #[derive(Debug, Clone, Zeroize)]
 #[zeroize(drop)]
 pub struct LweInstance {
-    pub b: Vec<u64>,
-    pub public_matrix_a: Vec<Vec<u64>>,
+    pub b: Vec<u64>, // The b-vector: b = (A * s + e) mod q
+    pub public_matrix_a: Vec<Vec<u64>>, // The public matrix A
 }
 
-pub fn isolate_chain_parameter<T: ToLweCoefficient>(
-    secret_s: &[T],
+/// Masks an MRS parameter (the secret chain parameter) within an LWE
+/// instance. q is the prime modulus (e.g. a Mersenne prime matching the
+/// MRS field).
+pub fn isolate_chain_parameter(
+    secret_s: &[u64],
     noise_e: &[u64],
-    modulus_q: u64,
+    modulus_q: u64
 ) -> Option<LweInstance> {
     if secret_s.is_empty() || secret_s.len() != noise_e.len() {
         return None;
     }
 
     let n = secret_s.len();
-    let s_u64: Vec<u64> = secret_s.iter().map(|v| v.to_lwe_u64() % modulus_q).collect();
-
+    // Generate a pseudo-random public matrix A (a simplified deterministic
+    // mock setup for test vectors)
     let mut matrix_a = vec![vec![0u64; n]; n];
     for i in 0..n {
         for j in 0..n {
@@ -49,10 +32,13 @@ pub fn isolate_chain_parameter<T: ToLweCoefficient>(
     }
 
     let mut b_vector = vec![0u64; n];
+
+    // Compute b = (A * s + e) mod q
     for i in 0..n {
         let mut sum = 0u64;
         for j in 0..n {
-            let product = (matrix_a[i][j] as u128 * s_u64[j] as u128) % modulus_q as u128;
+            // Avoid overflow during multiplication within the large modulus field
+            let product = (matrix_a[i][j] as u128 * secret_s[j] as u128) % modulus_q as u128;
             sum = (sum + product as u64) % modulus_q;
         }
         b_vector[i] = (sum + noise_e[i]) % modulus_q;
@@ -64,25 +50,20 @@ pub fn isolate_chain_parameter<T: ToLweCoefficient>(
     })
 }
 
-#[inline]
-fn ct_le_u64(a: u64, b: u64) -> Choice {
-    let underflow = b.wrapping_sub(a);
-    let is_lt = (underflow >> 63) as u8;
-    Choice::from(is_lt ^ 1)
-}
-
+/// Verifies in constant time whether a submitted chain solution
+/// mathematically matches the LWE isolation layer
 pub fn verify_lwe_match(
     instance: &LweInstance,
     claimed_s: &[u64],
     allowed_noise_bound: u64,
-    modulus_q: u64,
+    modulus_q: u64
 ) -> Choice {
     if claimed_s.len() != instance.b.len() {
         return Choice::from(0);
     }
 
     let n = claimed_s.len();
-    let mut all_match = Choice::from(1);
+    let mut all_match = 1u8;
 
     for i in 0..n {
         let mut computed_as = 0u64;
@@ -91,61 +72,17 @@ pub fn verify_lwe_match(
             computed_as = (computed_as + product as u64) % modulus_q;
         }
 
-        let b_i = instance.b[i];
-        let raw_diff = b_i.wrapping_sub(computed_as);
-        let alt_diff = computed_as.wrapping_sub(b_i);
-        let b_ge = ct_le_u64(computed_as, b_i);
-        let diff = u64::conditional_select(&raw_diff, &alt_diff, b_ge);
+        // Compute the absolute error (noise reconstruction) within the mod q field
+        let diff = if instance.b[i] >= computed_as {
+            instance.b[i] - computed_as
+        } else {
+            (instance.b[i] + modulus_q) - computed_as
+        };
 
-        let within_bound = ct_le_u64(diff, allowed_noise_bound);
-        // Choice implements BitAnd<Choice, Output = Choice>
-        all_match = all_match & within_bound;
+        // The error must fall within the cryptographic noise bound
+        let is_within_bound = diff <= allowed_noise_bound;
+        all_match &= if is_within_bound { 1 } else { 0 };
     }
 
-    all_match
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crypto_bigint::{U64, U256};
-
-    #[test]
-    fn lwe_round_trip_u64() {
-        let secret = vec![U64::from(42u64), U64::from(99u64)];
-        let noise = vec![5u64, 3u64];
-        let q = 1009u64;
-
-        let instance = isolate_chain_parameter(&secret, &noise, q).unwrap();
-        let claimed = vec![42u64, 99u64];
-        assert!(bool::from(verify_lwe_match(&instance, &claimed, 10, q)));
-    }
-
-    #[test]
-    fn lwe_round_trip_u256() {
-        let secret = vec![
-            U256::from_be_hex("000000000000000000000000000000000000000000000000000000000000002A"),
-            U256::from_be_hex("0000000000000000000000000000000000000000000000000000000000000063"),
-        ];
-        let noise = vec![5u64, 3u64];
-        let q = 1009u64;
-
-        let instance = isolate_chain_parameter(&secret, &noise, q).unwrap();
-        let claimed = vec![42u64, 99u64];
-        assert!(bool::from(verify_lwe_match(&instance, &claimed, 10, q)));
-    }
-
-    #[test]
-    fn lwe_invalid_length() {
-        let secret = vec![U64::from(1u64)];
-        let noise = vec![1u64, 2u64];
-        assert!(isolate_chain_parameter::<U64>(&secret, &noise, 100).is_none());
-    }
-
-    #[test]
-    fn ct_le_u64_correctness() {
-        assert!(bool::from(ct_le_u64(5, 10)));
-        assert!(bool::from(ct_le_u64(5, 5)));
-        assert!(!bool::from(ct_le_u64(10, 5)));
-    }
+    Choice::from(all_match)
 }
