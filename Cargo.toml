@@ -1,6 +1,7 @@
+```toml
 [package]
 name         = "mrs_auth_pqc"
-version      = "0.2.0"
+version      = "0.3.0"
 edition      = "2021"
 authors      = ["Bilal El Issaoui"]
 description  = "Research-grade hybrid post-quantum KEM with Diophantine deniability. Not audited for production use."
@@ -17,13 +18,14 @@ name = "mrs_auth_pqc"
 path = "src/lib.rs"
 
 [dependencies]
-pqc_kyber = { version = "0.7", features = ["std", "kyber1024"] }
-subtle    = { version = "2.6", default-features = false }
-zeroize   = { version = "1.8", features = ["derive"] }
-sha2      = "0.10"
-hmac      = "0.12"
-aes-gcm   = "0.10"
-rand      = "0.8"
+pqc_kyber     = { version = "0.7", features = ["std", "kyber1024"] }
+crypto_bigint = { version = "0.6", features = ["generic-array"] }
+subtle        = { version = "2.6", default-features = false }
+zeroize       = { version = "1.8", features = ["derive"] }
+sha2          = "0.10"
+hmac          = "0.12"
+aes-gcm       = "0.10"
+rand          = "0.8"
 
 [dev-dependencies]
 criterion = "0.5"
@@ -35,3 +37,4 @@ harness = false
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+```
