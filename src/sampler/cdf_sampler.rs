@@ -6,9 +6,9 @@ use crate::core::diophantine::{
     calculate_anchor, calculate_popoviciu_cardinality, generate_representation_family,
     select_branch_free, check_frobenius_bound,
 };
-use crypto_bigint::{ConstZero, NonZero, U64, U256};
+use crypto_bigint::{ConstZero, NonZero, U64, U256, CheckedMul};
 use rand::RngCore;
-use subtle::Choice;
+use subtle::{Choice, ConstantTimeGreater};
 use zeroize::Zeroize;
 
 #[inline]
@@ -235,6 +235,10 @@ pub fn sample_three_layers_cdf<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore
     Some(MrsChain { layers: chain, valid: Choice::from(1u8) })
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,5 +291,5 @@ mod tests {
         let c2 = sample_three_layers(&n, &mut rng).unwrap();
         assert_ne!(c1.layers[0].a, c2.layers[0].a);
     }
-                                        }
-                                     
+            }
+                   
