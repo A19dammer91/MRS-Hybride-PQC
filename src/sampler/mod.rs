@@ -1,7 +1,10 @@
-
+```rust
 pub mod cdf_sampler;
 
 pub use cdf_sampler::{
-    digital_root, check_ahead_valid, validate_triangle_condition,
-    calculate_layer_weights, sample_three_layers, MrsChain,
+    MrsChain, SamplerInt, FromRandom, ToBytes,
+    digital_root, validate_triangle_condition,
+    count_triangle_filtered, check_ahead_valid,
+    sample_three_layers, sample_three_layers_cdf, sample_triangle,
 };
+```
