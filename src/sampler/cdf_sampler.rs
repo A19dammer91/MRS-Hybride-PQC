@@ -8,7 +8,7 @@ use crate::core::diophantine::{
 };
 use crypto_bigint::{ConstZero, NonZero, U64, U256};
 use rand::RngCore;
-use subtle::{Choice, ConditionallySelectable};
+use subtle::Choice;
 use zeroize::Zeroize;
 
 #[inline]
@@ -43,7 +43,6 @@ impl FromRandom for U256 {
 pub trait SamplerInt: MrsInt + FromRandom + ToBytes {}
 impl<T> SamplerInt for T where T: MrsInt + FromRandom + ToBytes {}
 
-/// Securely samples a random value uniform below a public bound `upper_bound`.
 #[inline]
 pub fn uniform_below<T: SamplerInt>(upper_bound: &T, rng: &mut impl RngCore) -> T {
     let zero = T::ZERO;
@@ -55,14 +54,13 @@ pub fn uniform_below<T: SamplerInt>(upper_bound: &T, rng: &mut impl RngCore) -> 
     random_val.rem(NonZero::new(upper_bound.clone()).unwrap_or(nine))
 }
 
-/// Look-ahead verification to ensure a node generated can branch deep enough.
 #[inline]
 pub fn check_ahead_valid<T: SamplerInt>(n: &T) -> Choice {
     Choice::from(u8::from(check_frobenius_bound(n)))
 }
 
 // ============================================================================
-// MrsChain — Zeroize + Drop (Vec is niet Copy, dus hier wel Drop)
+// MrsChain — Zeroize + Drop (Vec is not Copy, so Drop here is fine)
 // ============================================================================
 
 #[derive(Debug, Clone)]
@@ -126,7 +124,6 @@ pub fn count_triangle_filtered<T: SamplerInt>(n: &T) -> T {
     count
 }
 
-/// O(1) Triangle Fast-Path sampling logic
 pub fn sample_triangle<T: SamplerInt>(n: &T, rng: &mut impl RngCore) -> BranchFreeResult<T> {
     let zero = T::ZERO;
     let one = T::from(1u64);
@@ -180,10 +177,6 @@ pub fn sample_triangle<T: SamplerInt>(n: &T, rng: &mut impl RngCore) -> BranchFr
     }
 }
 
-// ============================================================================
-// 3-layer sampler using the O(1) fast-path
-// ============================================================================
-
 pub fn sample_three_layers<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore) -> Option<MrsChain<T>> {
     const DEPTH: usize = 3;
     let mut chain = Vec::with_capacity(DEPTH);
@@ -200,10 +193,6 @@ pub fn sample_three_layers<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore) ->
 
     Some(MrsChain { layers: chain, valid: Choice::from(1u8) })
 }
-
-// ============================================================================
-// Fallback: CDF over materialised family (for small N / testing)
-// ============================================================================
 
 pub fn sample_three_layers_cdf<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore) -> Option<MrsChain<T>> {
     const DEPTH: usize = 3;
@@ -245,10 +234,6 @@ pub fn sample_three_layers_cdf<T: SamplerInt>(root_n: &T, rng: &mut impl RngCore
 
     Some(MrsChain { layers: chain, valid: Choice::from(1u8) })
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -302,4 +287,5 @@ mod tests {
         let c2 = sample_three_layers(&n, &mut rng).unwrap();
         assert_ne!(c1.layers[0].a, c2.layers[0].a);
     }
-        }
+                                        }
+                                     
