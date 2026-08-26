@@ -1,23 +1,20 @@
 //! Weighted CDF sampler and O(1) triangle fast-path for the MRS(19,9)
 //! Diophantine forest.
-//!
-//! Generic over `crypto_bigint` width (`U64`, `U256`, ...).
 
 use crate::core::diophantine::{
     BranchFreeResult, DiophantinePair, MrsInt, ToBytes,
     calculate_anchor, calculate_popoviciu_cardinality, generate_representation_family,
     select_branch_free, check_frobenius_bound,
 };
-use crypto_bigint::{NonZero, U64, U256};
+use crypto_bigint::{ConstZero, NonZero, U64, U256};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable};
 use zeroize::Zeroize;
 
 #[inline]
 fn nz<T: MrsInt>(val: u64) -> NonZero<T> {
-    let opt = NonZero::new(T::from(val));
-    assert!(bool::from(opt.is_some()), "constant {} must be non-zero", val);
-    opt.unwrap()
+    let ct = NonZero::new(T::from(val));
+    Option::from(ct).unwrap_or_else(|| panic!("constant {val} must be non-zero"))
 }
 
 // ============================================================================
@@ -38,9 +35,8 @@ impl FromRandom for U256 {
     fn from_random(rng: &mut impl RngCore) -> Self {
         let mut bytes = [0u8; 32];
         rng.fill_bytes(&mut bytes);
-        let opt = Self::from_be_slice(&bytes);
-        assert!(bool::from(opt.is_some()), "32 bytes always fit U256");
-        opt.unwrap()
+        let ct = Self::from_be_slice(&bytes);
+        Option::from(ct).expect("32 bytes always fit U256")
     }
 }
 
@@ -103,7 +99,7 @@ pub fn digital_root<T: SamplerInt>(n: &T) -> T {
     let n_minus_1 = n.checked_sub(&one).unwrap_or(zero);
     let rem = n_minus_1.rem(nine);
     let dr = one.checked_add(&rem).expect("1 + rem <= 9");
-    zero.conditional_select(&dr, !is_zero)
+    T::conditional_select(&zero, &dr, !is_zero)  // Fix: T::conditional_select
 }
 
 // ============================================================================
