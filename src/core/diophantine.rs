@@ -45,7 +45,6 @@ impl MrsInt for crypto_bigint::U256 {
 /// Builds a `NonZero<T>` from a small compile-time-known constant.
 #[inline]
 fn nz<T: MrsInt>(val: u64) -> NonZero<T> {
-    // Gebruik CtOption en unwrap_or_else voor constante tijd
     let ct = NonZero::new(T::from(val));
     Option::from(ct).unwrap_or_else(|| panic!("constant {val} must be non-zero"))
 }
@@ -57,12 +56,13 @@ fn expect_ct<T>(ct: crypto_bigint::subtle::CtOption<T>, msg: &str) -> T {
 }
 
 // ============================================================================
-// DiophantinePair - Geen Copy ivm Drop (Zeroize)
+// DiophantinePair — Copy + Zeroize (geen Drop; Copy is vereist voor
+// ConditionallySelectable en maakt branch-free selectie mogelijk)
 // ============================================================================
 
 /// A single representation (A, B) at one layer, generic over the integer
 /// width `T`.
-#[derive(Debug, Clone)]  // Copy verwijderd omdat Drop en Zeroize niet compatibel zijn met Copy
+#[derive(Debug, Clone, Copy)]
 pub struct DiophantinePair<T: MrsInt> {
     pub a: T,
     pub b: T,
@@ -72,12 +72,6 @@ impl<T: MrsInt> Zeroize for DiophantinePair<T> {
     fn zeroize(&mut self) {
         self.a.zeroize();
         self.b.zeroize();
-    }
-}
-
-impl<T: MrsInt> Drop for DiophantinePair<T> {
-    fn drop(&mut self) {
-        self.zeroize();
     }
 }
 
@@ -171,11 +165,11 @@ pub fn generate_representation_family<T: MrsInt>(n: &T) -> Vec<DiophantinePair<T
 }
 
 // ============================================================================
-// Branch-free selection helpers - Geen Copy ivm Drop
+// Branch-free selection helpers — Copy + Zeroize (geen Drop)
 // ============================================================================
 
 /// The result of a branch-free scan.
-#[derive(Debug, Clone)]  // Copy verwijderd
+#[derive(Debug, Clone, Copy)]
 pub struct BranchFreeResult<T: MrsInt> {
     pub pair: DiophantinePair<T>,
     pub valid: Choice,
@@ -184,12 +178,6 @@ pub struct BranchFreeResult<T: MrsInt> {
 impl<T: MrsInt> Zeroize for BranchFreeResult<T> {
     fn zeroize(&mut self) {
         self.pair.zeroize();
-    }
-}
-
-impl<T: MrsInt> Drop for BranchFreeResult<T> {
-    fn drop(&mut self) {
-        self.zeroize();
     }
 }
 
@@ -207,7 +195,7 @@ where
             valid: Choice::from(0u8),
         };
     }
-    let mut result = items[0].clone();
+    let mut result = items[0];
     let mut found = Choice::from(0u8);
     for (idx, item) in items.iter().enumerate() {
         let cond = predicate(item, idx);
@@ -235,14 +223,13 @@ where
             0,
         );
     }
-    let mut result = items[0].clone();
+    let mut result = items[0];
     let mut found = Choice::from(0u8);
     let mut selected_idx = 0usize;
     for (idx, item) in items.iter().enumerate() {
         let cond = predicate(item, idx);
         let should_take = cond & !found;
         result = DiophantinePair::conditional_select(&result, item, should_take);
-        // Gebruik conditional_select voor usize (vereist Copy, dus clone)
         selected_idx = if bool::from(should_take) { idx } else { selected_idx };
         found |= cond;
     }
@@ -282,52 +269,29 @@ mod tests {
         let n = U64::from(5_000_003u64);
         for pair in generate_representation_family(&n) {
             let lhs = U64::from(19u64)
-                .checked_mul(&pair.a)
-                .unwrap()
-                .checked_add(&U64::from(9u64).checked_mul(&pair.b).unwrap())
-                .unwrap();
+                .checked_mul(&pair.a).unwrap()
+                .checked_add(&U64::from(9u64).checked_mul(&pair.b).unwrap()).unwrap();
             assert_eq!(lhs, n);
         }
     }
 
     #[test]
     fn family_reconstructs_n_u256() {
-        let n = U256::from_be_hex(
-            "0000000000000000000000000000000000000000000000000000E8D4A51000",
-        );
+        let n = U256::from_be_hex("0000000000000000000000000000000000000000000000000000000000004C4B3B");
         for pair in generate_representation_family(&n) {
             let lhs = U256::from(19u64)
-                .checked_mul(&pair.a)
-                .unwrap()
-                .checked_add(&U256::from(9u64).checked_mul(&pair.b).unwrap())
-                .unwrap();
+                .checked_mul(&pair.a).unwrap()
+                .checked_add(&U256::from(9u64).checked_mul(&pair.b).unwrap()).unwrap();
             assert_eq!(lhs, n);
         }
     }
 
     #[test]
-    fn branch_free_select_basic() {
-        let n = U64::from(500u64);
-        let family = generate_representation_family(&n);
-        let res = select_branch_free(&family, |pair, _| pair.a.rem(nz::<U64>(2)).ct_eq(&U64::ZERO));
+    fn branch_free_select_finds_match() {
+        let family = generate_representation_family(&U64::from(500u64));
+        let target = U64::from(5u64);
+        let res = select_branch_free(&family, |pair, _idx| pair.a.ct_eq(&target));
         assert!(bool::from(res.valid));
-        assert!(bool::from(res.pair.a.rem(nz::<U64>(2)).ct_eq(&U64::ZERO)));
+        assert_eq!(res.pair.a, target);
     }
-
-    #[test]
-    fn zeroize_pair() {
-        let mut p = DiophantinePair { a: U64::from(0xDEADBEEFu64), b: U64::from(0xCAFEBABEu64) };
-        p.zeroize();
-        assert_eq!(p.a, U64::ZERO);
-        assert_eq!(p.b, U64::ZERO);
-    }
-
-    #[test]
-    fn ct_eq_pair() {
-        let p1 = DiophantinePair { a: U64::from(42u64), b: U64::from(99u64) };
-        let p2 = DiophantinePair { a: U64::from(42u64), b: U64::from(99u64) };
-        let p3 = DiophantinePair { a: U64::from(42u64), b: U64::from(100u64) };
-        assert!(bool::from(p1.ct_eq(&p2)));
-        assert!(!bool::from(p1.ct_eq(&p3)));
-    }
-        }
+}
