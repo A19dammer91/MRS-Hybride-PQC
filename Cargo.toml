@@ -1,15 +1,15 @@
 [package]
-name         = "mrs_auth_pqc"
-version      = "0.3.0"
-edition      = "2021"
-authors      = ["Bilal El Issaoui"]
-description  = "Research-grade hybrid post-quantum KEM with Diophantine deniability. Not audited for production use."
-license      = "Apache-2.0"
-repository   = "https://github.com/A19dammer91/MRS-Hybride-PQC"
+name        = "mrs_auth_pqc"
+version     = "0.3.0"
+edition     = "2021"
+authors     = ["Bilal El Issaoui"]
+description = "Research-grade hybrid post-quantum KEM with Diophantine deniability. Not audited for production use."
+license     = "Apache-2.0"
+repository  = "https://github.com/A19dammer91/MRS-Hybride-PQC"
 documentation = "https://docs.rs/mrs_auth_pqc"
-readme       = "README.md"
-keywords     = ["cryptography", "post-quantum", "kyber", "deniability", "diophantine"]
-categories   = ["cryptography"]
+readme      = "README.md"
+keywords    = ["cryptography", "post-quantum", "kyber", "deniability", "diophantine"]
+categories  = ["cryptography"]
 rust-version = "1.70"
 
 [lib]
@@ -17,20 +17,28 @@ name = "mrs_auth_pqc"
 path = "src/lib.rs"
 
 [dependencies]
-pqc_kyber     = { version = "0.7", features = ["std", "kyber1024"] }
-crypto-bigint = { version = "0.6", features = ["zeroize"] }
-subtle        = { version = "2.6", default-features = false }
-zeroize       = { version = "1.8", features = ["derive"] }
-sha2          = "0.10"
-hmac          = "0.12"
-aes-gcm       = "0.10"
-rand          = "0.8"
+# Post-quantum KEM -- Kyber1024 (NIST Level 5), per the paper's security claims
+pqc_kyber = { version = "0.7", features = ["std", "kyber1024"] }
+
+# Constant-time operations against timing attacks
+subtle = { version = "2.6", default-features = false }
+
+# Automatic memory wiping from RAM
+zeroize = { version = "1.8", features = ["derive"] }
+
+# Hashing and cryptographic building blocks
+sha2    = "0.10"
+hmac    = "0.12"
+aes-gcm = "0.10"
+
+# CSPRNG sampling in the MRS chain sampler
+rand = "0.8"
 
 [dev-dependencies]
 criterion = "0.5"
 
 [[bench]]
-name    = "sampler_bench"
+name = "sampler_bench"
 harness = false
 
 [package.metadata.docs.rs]
