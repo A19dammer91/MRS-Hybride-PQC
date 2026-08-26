@@ -5,6 +5,7 @@ use rand::thread_rng;
 
 use crate::crypto::{decrypt_payload_hybrid, derive_hybrid_key, encrypt_payload_hybrid, HybridCiphertextPacket};
 use crate::sampler::{sample_three_layers, MrsChain, SamplerInt};
+use crate::core::MyU64;
 
 pub struct Keypair {
     pub public_key: [u8; pqc_kyber::KYBER_PUBLICKEYBYTES],
@@ -13,8 +14,8 @@ pub struct Keypair {
 
 /// Everything the receiver needs: Kyber ciphertext, AES payload, MRS chain.
 ///
-/// Generic over `T` so the same envelope works for `U64` (benchmark) and
-/// `U256` (cryptographic scale).
+/// Generic over `T` so the same envelope works for `MyU64` (benchmark) and
+/// `MyU256` (cryptographic scale).
 pub struct SecureEnvelope<T: SamplerInt> {
     pub packet: HybridCiphertextPacket,
     pub mrs_chain: MrsChain<T>,
@@ -33,7 +34,7 @@ impl From<KyberError> for FrameworkError {
 
 /// Derives the public Diophantine root N from `session_id`.
 ///
-/// Returns `T` so it works for any width (`U64`, `U256`, ...).
+/// Returns `T` so it works for any width (`MyU64`, `MyU256`, ...).
 fn derive_session_root<T: SamplerInt>(session_id: &[u8]) -> T {
     let mut acc: u64 = 0x9E3779B97F4A7C15;
     for &byte in session_id {
@@ -98,7 +99,7 @@ impl MrsAuthFramework {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crypto_bigint::U64;
+    use crate::core::MyU64;
 
     #[test]
     fn full_round_trip_u64() {
@@ -108,7 +109,7 @@ mod tests {
         let aad = b"envelope-header";
         let plaintext = b"round-trip message";
 
-        let envelope: SecureEnvelope<U64> = MrsAuthFramework::full_encrypt(
+        let envelope: SecureEnvelope<MyU64> = MrsAuthFramework::full_encrypt(
             &keypair.public_key, session_id, &nonce, aad, plaintext,
         ).expect("encrypt ok");
 
