@@ -70,7 +70,42 @@ pub fn isolate_chain_parameter<T: ToLweCoefficient>(
     })
 }
 
+// ============================================================================
+// Branch-free u64 comparison helpers
+// ============================================================================
+
+/// Constant-time `a <= b` for u64.
+///
+/// Uses only bitwise operations: no branches, no short-circuiting.
+#[inline]
+fn ct_le_u64(a: u64, b: u64) -> Choice {
+    // a <= b  <=>  NOT (b < a)
+    // b < a   <=>  (b - a) underflows, i.e. sign bit of (b - a) is 1
+    let underflow = b.wrapping_sub(a);
+    let is_lt = (underflow >> 63) as u8;
+    Choice::from(is_lt ^ 1)
+}
+
+/// Constant-time `a == b` for u64.
+#[inline]
+fn ct_eq_u64(a: u64, b: u64) -> Choice {
+    let diff = a ^ b;
+    // diff == 0  <=>  all bits zero  <=>  wrapping_sub gives no borrow
+    let is_zero = diff.wrapping_sub(1) >> 63;
+    Choice::from(is_zero as u8)
+}
+
+// ============================================================================
+// Branch-free LWE verification
+// ============================================================================
+
 /// Verifies in constant time whether a claimed solution matches the LWE instance.
+///
+/// # Constant-time guarantee
+///
+/// * No branches on `claimed_s` values.
+/// * The loop always runs exactly `n` iterations.
+/// * The final result is accumulated via bitwise AND (`&`), not short-circuit.
 pub fn verify_lwe_match(
     instance: &LweInstance,
     claimed_s: &[u64],
@@ -82,7 +117,7 @@ pub fn verify_lwe_match(
     }
 
     let n = claimed_s.len();
-    let mut all_match = 1u8;
+    let mut all_match = Choice::from(1);
 
     for i in 0..n {
         let mut computed_as = 0u64;
@@ -91,17 +126,19 @@ pub fn verify_lwe_match(
             computed_as = (computed_as + product as u64) % modulus_q;
         }
 
-        let diff = if instance.b[i] >= computed_as {
-            instance.b[i] - computed_as
-        } else {
-            (instance.b[i] + modulus_q) - computed_as
-        };
+        // diff = |b[i] - computed_as| mod q (branch-free absolute difference)
+        let b_i = instance.b[i];
+        let raw_diff = b_i.wrapping_sub(computed_as);
+        let alt_diff = computed_as.wrapping_sub(b_i);
+        let b_ge = ct_le_u64(computed_as, b_i);
+        let diff = u64::conditional_select(&alt_diff, &raw_diff, b_ge);
 
-        let is_within_bound = diff <= allowed_noise_bound;
-        all_match &= if is_within_bound { 1 } else { 0 };
+        // Check diff <= allowed_noise_bound (constant time)
+        let within_bound = ct_le_u64(diff, allowed_noise_bound);
+        all_match &= within_bound;
     }
 
-    Choice::from(all_match)
+    all_match
 }
 
 // ============================================================================
@@ -142,6 +179,19 @@ mod tests {
         let secret = vec![U64::from(1u64)];
         let noise = vec![1u64, 2u64];
         assert!(isolate_chain_parameter::<U64>(&secret, &noise, 100).is_none());
+    }
+
+    #[test]
+    fn ct_le_u64_correctness() {
+        assert!(bool::from(ct_le_u64(5, 10)));
+        assert!(bool::from(ct_le_u64(5, 5)));
+        assert!(!bool::from(ct_le_u64(10, 5)));
+    }
+
+    #[test]
+    fn ct_eq_u64_correctness() {
+        assert!(bool::from(ct_eq_u64(42, 42)));
+        assert!(!bool::from(ct_eq_u64(42, 43)));
     }
 }
 ```
