@@ -1,4 +1,3 @@
-```rust
 use crate::core::diophantine::MrsInt;
 use crypto_bigint::{U256, U64};
 use subtle::Choice;
@@ -194,4 +193,3 @@ mod tests {
         assert!(!bool::from(ct_eq_u64(42, 43)));
     }
 }
-```
