@@ -1,4 +1,3 @@
-```rust
 // Register the framework's internal submodules
 pub mod core;
 pub mod crypto;
@@ -12,4 +11,3 @@ pub use crate::crypto::{derive_hybrid_key, encrypt_payload_hybrid, decrypt_paylo
 pub use crate::framework::{MrsAuthFramework, SecureEnvelope, Keypair, FrameworkError};
 pub use crate::sampler::{MrsChain, SamplerInt, FromRandom, sample_three_layers, sample_triangle};
 pub use crate::security::{TimeCode, generate_timecode, LweInstance, ToLweCoefficient, MerkleProof, hash_mrs_chain};
-```
