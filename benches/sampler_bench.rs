@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use crypto_bigint::{U64, U256};
 use mrs_auth_pqc::sampler::sample_three_layers;
+use mrs_auth_pqc::core::{MyU64, MyU256};
 use rand::rngs::OsRng;
 
 fn bench_sampler_u64(c: &mut Criterion) {
@@ -12,7 +12,7 @@ fn bench_sampler_u64(c: &mut Criterion) {
         ("max_u64_range_1e18", 1_000_000_000_000_000_003),
     ];
     for (label, n) in scales {
-        let root = U64::from(n);
+        let root = MyU64::from(n);
         group.bench_with_input(BenchmarkId::from_parameter(label), &root, |b, root| {
             let mut rng = OsRng;
             b.iter(|| black_box(sample_three_layers(black_box(root), &mut rng)));
@@ -30,7 +30,7 @@ fn bench_sampler_u256(c: &mut Criterion) {
         ("crypto_10p48", "00000000000000000000000000000000000000000000000000000000E8D4A51000"),
     ];
     for (label, hex) in scales {
-        let root = U256::from_be_hex(hex);
+        let root = MyU256::from_be_hex(hex);
         group.bench_with_input(BenchmarkId::from_parameter(label), &root, |b, root| {
             let mut rng = OsRng;
             b.iter(|| black_box(sample_three_layers(black_box(root), &mut rng)));
