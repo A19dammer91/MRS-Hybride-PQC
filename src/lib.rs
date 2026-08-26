@@ -5,9 +5,9 @@ pub mod framework;
 pub mod sampler;
 pub mod security;
 
-// Expose the most important base types directly from the library root
-pub use crate::core::DiophantinePair;
+// Expose base types directly from the library root
+pub use crate::core::{DiophantinePair, MrsInt, ToBytes, BranchFreeResult};
 pub use crate::crypto::{derive_hybrid_key, encrypt_payload_hybrid, decrypt_payload_hybrid, HybridCiphertextPacket};
 pub use crate::framework::{MrsAuthFramework, SecureEnvelope, Keypair, FrameworkError};
-pub use crate::sampler::MrsChain;
+pub use crate::sampler::{MrsChain, SamplerInt, FromRandom, sample_three_layers, sample_triangle};
 pub use crate::security::TimeCode;
