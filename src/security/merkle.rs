@@ -8,7 +8,9 @@ use crate::sampler::MrsChain;
 #[zeroize(drop)]
 pub struct MerkleProof {
     pub leaf_index: usize,
-    pub lemmas: Vec<[u8; 32]>,
+    /// Sibling hashes along the path from leaf to root.
+    pub path: Vec<[u8; 32]>,
+    /// Direction flags: `true` = current hash is the right child.
     pub path_bits: Vec<bool>,
 }
 
@@ -67,7 +69,7 @@ pub fn verify_k_acceptance_proof(
     proof: &MerkleProof,
 ) -> Choice {
     let mut current_hash = *leaf_hash;
-    for (sibling, is_right) in proof.lemmas.iter().zip(proof.path_bits.iter()) {
+    for (sibling, is_right) in proof.path.iter().zip(proof.path_bits.iter()) {
         let mut hasher = Sha256::new();
         if *is_right {
             hasher.update(current_hash);
