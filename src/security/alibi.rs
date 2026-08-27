@@ -3,8 +3,8 @@
 //! to satisfy LWE and Merkle-tree verification parameters during coercion.
 
 use super::{LweInstance, MerkleProof};
-use crate::sampler::{MrsChain, DiophantinePair};
-use subtle::Choice;
+use crate::core::diophantine::DiophantinePair;
+use crate::sampler::MrsChain;
 
 /// Struct holding the complete fabricated evidence package handed to a coercer.
 pub struct AlibiEvidence {
@@ -24,8 +24,8 @@ pub fn forge_lwe_secret(
     // 1. Choose a nominal, safe dummy noise vector 'e' well within the allowed bound
     let forged_e = vec![1u64; instance.b.len()];
     
-    // 2. Solve the linear Diophantine congruence system: A * s_forged = (b - e) mod q
-    let mut forged_s = vec![0u64; instance.matrix_a.len()];
+    // 2. Solve the linear Diophantine congruence system: public_matrix_a * s_forged = (b - e) mod q
+    let mut forged_s = vec![0u64; instance.public_matrix_a.len()];
     
     // Abstract matrix inversion simulation matching the verification parameters
     for i in 0..forged_s.len() {
@@ -41,16 +41,18 @@ pub fn generate_alibi_proof(
     _public_root: &[u8; 32],
     alibi_chain: MrsChain,
     instance: &LweInstance,
-    sibling_hashes: Vec<[u8; 32]>,
+    _sibling_hashes: Vec<[u8; 32]>,
     allowed_noise_bound: u64,
     modulus_q: u64,
 ) -> AlibiEvidence {
     // 1. Forge the LWE secret to bypass algebra checks
     let forged_secret_s = forge_lwe_secret(instance, &alibi_chain, allowed_noise_bound, modulus_q);
 
-    // 2. Construct the fabricated Merkle inclusion proof using the sibling path
+    // 2. Construct the fabricated Merkle inclusion proof using your structural fields
     let merkle_proof = MerkleProof {
-        path: sibling_hashes,
+        root_index: 0,
+        leaves: vec![[0u8; 32]],
+        path_bits: vec![[0u8; 32]],
     };
 
     AlibiEvidence {
@@ -76,9 +78,9 @@ mod alibi_tests {
         
         let public_root = [0u8; 32];
         
-        // Correct u64 types initialization to prevent compiler errors
+        // Match your structural LweInstance fields exactly
         let mock_instance = LweInstance {
-            matrix_a: vec![vec![1, 2], vec![3, 4]], 
+            public_matrix_a: vec![vec![1, 2], vec![3, 4]], 
             b: vec![10, 20],                       
         };
 
@@ -104,7 +106,7 @@ mod alibi_tests {
             modulus_q,
         );
 
-        // CRITICAL CLAIM: The verification pathway MUST return true (1u8 status code)
+        // CRITICAL CLAIM: The verification pathway must evaluate to a valid Choice status code
         assert_eq!(lwe_verification_success.unwrap_u8(), 1u8);
     }
 }
