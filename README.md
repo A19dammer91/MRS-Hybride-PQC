@@ -12,7 +12,7 @@
 
 ### Post-Quantum Coercion-Resistant Authentication Framework
 
-> **MRS-AUTH** is a hybrid post-quantum cryptographic library combining **Kyber-1024 KEM** (NIST Level 5, IND-CCA2), **MRS(19,9) Diophantine chain sampling**, and **AES-256-GCM authenticated encryption**.
+> **MRS-AUTH** is a hybrid post-quantum cryptographic library combining **ML-KEM-1024** (NIST FIPS 203, IND-CCA2), **MRS(19,9) Diophantine chain sampling**, and **AES-256-GCM authenticated encryption**.
 >
 > It provides **information-theoretic deniability** — a coerced user can always produce a mathematically valid alternative credential (an *alibi chain*) that is indistinguishable from the true secret.
 
@@ -81,7 +81,7 @@ $$K_{max} = \left\lfloor \frac{B_0}{19} \right\rfloor \quad \text{or} \quad K_{m
 
 | Property | Mechanism | Guarantee |
 | :--- | :--- | :--- |
-| **Post-Quantum Confidentiality** | Kyber-1024 KEM | IND-CCA2 secure against quantum adversaries (NIST Level 5) |
+| **Post-Quantum Confidentiality** | ML-KEM-1024 | IND-CCA2 secure against quantum adversaries (NIST Level 5) |
 | **Deniability** | MRS(19,9) Diophantine forest sampling | Information-theoretic; unlimited alibi chains exist for every session |
 | **Forward Secrecy** | Per-session ephemeral keys + HKDF | Compromise of long-term keys does not decrypt past sessions |
 | **Integrity** | AES-256-GCM AEAD | Authenticated encryption with 128-bit authentication tag |
@@ -97,11 +97,11 @@ The protocol is organized into five functional blocks plus a hybrid coupling lay
 
 | Block | Module | Function | Description |
 | :--- | :--- | :--- | :--- |
-| **1** | `crypto::hybrid` | `kyber_keygen` / `kyber_encapsulate` | Post-quantum Key Encapsulation (Kyber-1024) |
+| **1** | `crypto::hybrid` | `kyber_keygen` / `kyber_encapsulate` | Post-quantum Key Encapsulation (ML-KEM-1024) |
 | **2** | `sampler::cdf_sampler` | `sample_three_layers` | O(1) closed-form triangle-valid sampling per layer with correct $K_{max}$ structural bounds filtering (see **Crown Equation 3**) |
 | **3** | `security::merkle` | `build_k_acceptance_root` / `verify_k_acceptance_proof` | Balanced Merkle commitment mixing authentic and decoy chains |
 | **4** | `security::lwe` | `isolate_chain_parameter` / `verify_lwe_match` | LWE-based masking of chain parameters ($b = A \cdot s + e$) |
-| **Coupling** | `crypto::hybrid` | `derive_hybrid_key` | HKDF-SHA256 key derivation mixing Kyber SS + MRS chain + session context |
+| **Coupling** | `crypto::hybrid` | `derive_hybrid_key` | HKDF-SHA256 key derivation mixing ML-KEM SS + MRS chain + session context |
 | **5** | `crypto::hybrid` | `encrypt_payload_hybrid` / `decrypt_payload_hybrid` | AES-256-GCM AEAD encryption/decryption |
 | **Auth** | `security::timecode` | `generate_timecode` / `run_with_temporal_barrier` | HMAC-SHA256 time-bound authentication codes protected via an interactive hardware clock barrier |
 
@@ -197,7 +197,7 @@ use rand::rngs::OsRng;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = OsRng;
 
-    // 1. Generate a post-quantum Kyber-1024 keypair
+    // 1. Generate a post-quantum ML-KEM-1024 keypair
     let keypair = MrsAuthFramework::keygen()?;
 
     // 2. Define session parameters
