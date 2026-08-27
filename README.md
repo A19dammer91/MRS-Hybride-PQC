@@ -1,37 +1,29 @@
 # MRS-AUTH
+### Post-Quantum Coercion-Resistant Authentication Framework
 
-<p align="center">
-  <em>Post-Quantum Coercion-Resistant Authentication Framework</em>
-</p>
+[![License](https://shields.io)](LICENSE)
+[![Tests](https://github.com)](https://github.com)
+[![Benchmark](https://github.com/workflows/benchmark.yml/badge.svg)](https://github.com)
+[![Rust 1.70+](https://shields.io)](https://rust-lang.org)
+[![EasyCrypt Verified](https://shields.io)](proofs/)
 
-<p align="center">
-  <a href="https://doi.org/10.5281/zenodo.21852606"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.21852606.svg" alt="DOI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
-  <a href="https://github.com/A19dammer91/MRS-Hybride-PQC/actions/workflows/rust.yml"><img src="https://img.shields.io/github/actions/workflow/status/A19dammer91/MRS-Hybride-PQC/rust.yml?branch=main&label=Tests" alt="Build Status"></a>
-  <a href="https://github.com/A19dammer91/MRS-Hybride-PQC/actions/workflows/benchmark.yml"><img src="https://img.shields.io/github/actions/workflow/status/A19dammer91/MRS-Hybride-PQC/benchmark.yml?branch=main&label=Benchmark" alt="Benchmark"></a>
-  <img src="https://img.shields.io/badge/Rust-1.70%2B-orange.svg" alt="Rust 1.70+">
-  <img src="https://img.shields.io/badge/EasyCrypt-Verified-blue.svg" alt="EasyCrypt Verified">
-</p>
-
-> **MRS-AUTH** is a hybrid post-quantum cryptographic library combining **Kyber-1024 KEM** (NIST Level 5, IND-CCA2), **MRS(19,9) Diophantine chain sampling**, and **AES-256-GCM authenticated encryption**.
+> **MRS-AUTH** is a hybrid post-quantum cryptographic library combining **Kyber-1024 KEM** (NIST Level 5, IND-CCA2), **MRS(19,9) Diophantine chain sampling**, and **AES-256-GCM authenticated encryption**. 
 >
 > It provides **information-theoretic deniability** — a coerced user can always produce a mathematically valid alternative credential (an *alibi chain*) that is indistinguishable from the true secret.
 
 ---
 
 ## Table of Contents
-
 - [Overview](#overview)
-  - [How Deniability Works](#how-deniability-works)
-- [Comparison with Existing Systems](COMPARISON.md)
+- [The Crown Equations (Mathematical Core)](#the-crown-equations-mathematical-core)
 - [Security Properties](#security-properties)
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [API Reference](#api-reference)
+- [Active Security Hardening & Formal Games](#active-security-hardening--formal-games)
 - [Formal Verification](#formal-verification)
 - [Benchmarks](#benchmarks)
-- [Implementation Safeguards](#implementation-safeguards)
 - [Project Structure](#project-structure)
 - [Citation](#citation)
 - [Disclaimer](#disclaimer)
@@ -41,41 +33,49 @@
 
 ## Overview
 
-### How Deniability Works
+MRS-AUTH solves the critical real-world problem of physical coercion, extortion, and duress in digital authentication. Traditional cryptographic systems rely on a **single, unique secret key**. Under coercion, a user has no recourse: revealing the secret compromises security, while refusing to cooperate plaintextly proves the secret's existence. 
 
-MRS-AUTH provides **information-theoretic deniability** through *mathematical multiplicity*. Instead of a single secret key, the protocol builds a [forest of valid Diophantine chains](DENIABILITY.md) rooted in `N = 19A + 9B`. The authentic chain is drawn uniformly at random; every other chain is a mathematically perfect alibi. A coerced user can reveal *any* valid chain — the attacker cannot prove it is not the true one.
+MRS-AUTH introduces **mathematical multiplicity** through nested linear Diophantine systems. Instead of a single static key, the protocol builds an infinite forest of valid cryptographic chains rooted in the foundational equation:
 
-For the complete visual explanation, see [`DENIABILITY.md`](DENIABILITY.md).
+$$\mathbf{N = 19A + 9B}$$
 
-Traditional authentication relies on a **single, unique secret**. Under coercion, a user has no recourse: revealing the secret compromises security; refusing reveals its existence.
-
-MRS-AUTH solves this through **mathematical multiplicity**. The protocol is built on the nested linear Diophantine system:
-
-```
-N = 19A + 9B
-```
-
-For any valid `N`, there exist exponentially many representation families `(A, B)`. By recursively nesting this decomposition across **three functional layers** (`L = 3`), MRS-AUTH creates a *forest* of valid chains. The authentic chain is drawn uniformly at random from this forest. Every other chain in the forest is a **perfect alibi** — mathematically valid, structurally indistinguishable, and information-theoretically equivalent.
-
-This gives the framework its core property: **the attacker and the coerced user stand in computationally isomorphic positions**.
-
-> **Want the full picture?** See [`DENIABILITY.md`](DENIABILITY.md) for a visual, step-by-step explanation of the Forest Analogy, the three-layer Matryoshka nesting, and why the coerced user can always produce a perfect alibi.
->
-> For a detailed comparison with existing coercion-resistant systems, see [`COMPARISON.md`](COMPARISON.md).
+The authentic chain is drawn uniformly at random from this distribution; every other chain in the forest acts as a mathematically perfect alibi. By recursively nesting this decomposition across **three functional layers** ($L = 3$), the framework ensures that a coerced user can safely hand over an alternative "alibi" credential. Because all paths within the forest are information-theoretically equivalent, an attacker stands in a computationally isomorphic position and can never prove it is not the true secret.
 
 ---
 
+## 👑 The Crown Equations (Mathematical Core)
+
+To eliminate the need for heavy $O(N)$ processing memory loops or brute-force enumeration, the framework compresses the entire Diophantine forest parameter calculations into a highly elegant set of constant-time, closed-form equations. 
+
+These equations allow our `cdf_sampler` engine to complete the full 3-layer nesting process in **sub-microsecond execution loops** while maintaining complete side-channel immunity:
+
+### 1. The Core Anchor Equation
+$$A_0 = \text{dr}(N)$$
+
+> *Strips away the scale of the public session root $N$ using the branch-free digital root to lock the absolute mathematical starting anchor ($1 \le A_0 \le 9$).*
+
+### 2. The Maximum Base Reconstruction
+$$B_0 = \frac{N - 19A_0}{9}$$
+
+> *Algebraically isolates the maximum starting boundary for the $B$-coefficient, ensuring perfect modulo divisibility across layers without underflow leaks.*
+
+### 3. The Structural Bounds Filter ($K_{max}$)
+$$K_{max} = \left\lfloor \frac{B_0}{19} \right\rfloor \quad \text{or} \quad K_{max} = R(N) - 1$$
+
+> *Defines the exact window of valid alibi transformations via Popoviciu's cardinality formula before the parameters underflow, mathematically establishing the boundaries of the alibi forest.*
+
+---
 ## Security Properties
 
 | Property | Mechanism | Guarantee |
-| :------- | :-------- | :-------- |
+| :--- | :--- | :--- |
 | **Post-Quantum Confidentiality** | Kyber-1024 KEM | IND-CCA2 secure against quantum adversaries (NIST Level 5) |
 | **Deniability** | MRS(19,9) Diophantine forest sampling | Information-theoretic; unlimited alibi chains exist for every session |
 | **Forward Secrecy** | Per-session ephemeral keys + HKDF | Compromise of long-term keys does not decrypt past sessions |
 | **Integrity** | AES-256-GCM AEAD | Authenticated encryption with 128-bit authentication tag |
 | **Timing Attack Resistance** | Constant-time operations via `subtle` | Branch-free comparison and selection |
 | **Memory Safety** | `zeroize` + RAII drops | Secrets cleared from RAM on scope exit |
-| **Computational Scale** | Native `u64` arithmetic | Supports N up to ~10¹⁸ with sub-microsecond sampling |
+| **Computational Scale** | Native `u64` (default) / `U256` (feature) | Supports standard machine words alongside an optional path for scaling up to $N \approx 10^{42}$ via features. |
 
 ---
 
@@ -84,41 +84,33 @@ This gives the framework its core property: **the attacker and the coerced user 
 The protocol is organized into five functional blocks plus a hybrid coupling layer:
 
 | Block | Module | Function | Description |
-| :---- | :----- | :------- | :---------- |
+| :--- | :--- | :--- | :--- |
 | **1** | `crypto::hybrid` | `kyber_keygen` / `kyber_encapsulate` | Post-quantum Key Encapsulation (Kyber-1024) |
-| **2** | `sampler::cdf_sampler` | `sample_three_layers` | O(1) triangle-valid sampling per layer with branch-free CDF selection |
+| **2** | `sampler::cdf_sampler` | `sample_three_layers` | O(1) closed-form triangle-valid sampling per layer with correct $K_{max}$ structural bounds filtering (see **Crown Equation 3**) |
 | **3** | `security::merkle` | `build_k_acceptance_root` / `verify_k_acceptance_proof` | Balanced Merkle commitment mixing authentic and decoy chains |
-| **4** | `security::lwe` | `isolate_chain_parameter` / `verify_lwe_match` | LWE-based masking of chain parameters (`b = A·s + e`) |
+| **4** | `security::lwe` | `isolate_chain_parameter` / `verify_lwe_match` | LWE-based masking of chain parameters ($b = A \cdot s + e$) |
 | **Coupling** | `crypto::hybrid` | `derive_hybrid_key` | HKDF-SHA256 key derivation mixing Kyber SS + MRS chain + session context |
 | **5** | `crypto::hybrid` | `encrypt_payload_hybrid` / `decrypt_payload_hybrid` | AES-256-GCM AEAD encryption/decryption |
-| **Auth** | `security::timecode` | `generate_timecode` | HMAC-SHA256 time-based authentication codes |
-
-### Design Note: Why the Chain Travels in the Clear
-
-The MRS chain is carried inside [`SecureEnvelope`](src/framework.rs) alongside the ciphertext. This is **not a leak**: deniability does not rely on hiding *which* chain was used, but on the fact that *every* chain in the forest is structurally identical. The receiver cannot regenerate the chain from `session_id` alone because sampling is cryptographically random (via `OsRng`). See the [Forest Symmetry Theorem](https://doi.org/10.5281/zenodo.21852606) (§3) for the formal proof.
+| **Auth** | `security::timecode` | `generate_timecode` / `run_with_temporal_barrier` | HMAC-SHA256 time-bound authentication codes protected via an interactive hardware clock barrier |
 
 ---
 
 ## Installation
 
 ### Requirements
-
 - **Rust** 1.70 or newer
 - A **nightly toolchain** is recommended for full constant-time guarantees (some `subtle` features)
 
 ### From Git
-
 Add to your `Cargo.toml`:
-
 ```toml
 [dependencies]
-mrs_auth_pqc = { git = "https://github.com/A19dammer91/MRS-Hybride-PQC" }
+mrs_auth_pqc = { git = "https://github.com" }
 ```
 
 ### Local Development
-
 ```bash
-git clone https://github.com/A19dammer91/MRS-Hybride-PQC.git
+git clone https://github.com.git
 cd MRS-Hybride-PQC
 cargo build --release
 ```
@@ -129,14 +121,17 @@ cargo build --release
 
 ```rust
 use mrs_auth_pqc::MrsAuthFramework;
+use rand::rngs::OsRng;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut rng = OsRng;
+
     // 1. Generate a post-quantum Kyber-1024 keypair
     let keypair = MrsAuthFramework::keygen()?;
 
     // 2. Define session parameters
     let session_id = b"session-2026-08-24";
-    let nonce = [7u8; 12];          // Must be unique per key
+    let nonce = [7u8; 12]; // Must be unique per key
     let associated_data = b"metadata";
     let plaintext = b"Top secret message!";
 
@@ -163,24 +158,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
-
----
-
 ## API Reference
 
 ### Top-Level Framework
-
 Defined in [`src/framework.rs`](src/framework.rs).
-
 ```rust
 pub struct MrsAuthFramework;
 
 impl MrsAuthFramework {
-    /// Generate a new Kyber-1024 keypair.
     pub fn keygen() -> Result<Keypair, FrameworkError>;
-
-    /// Full deniable encapsulation: Kyber encapsulate → sample MRS chain
-    /// → derive hybrid key → AES-256-GCM encrypt.
     pub fn full_encrypt(
         public_key: &[u8; KYBER_PUBLICKEYBYTES],
         session_id: &[u8],
@@ -188,8 +174,6 @@ impl MrsAuthFramework {
         associated_data: &[u8],
         plaintext: &[u8],
     ) -> Result<SecureEnvelope, FrameworkError>;
-
-    /// Full authenticated decryption.
     pub fn full_decrypt(
         secret_key: &[u8; KYBER_SECRETKEYBYTES],
         envelope: &SecureEnvelope,
@@ -200,61 +184,31 @@ impl MrsAuthFramework {
 }
 ```
 
-### Core Types
-
-| Type | Module | Description |
-| :--- | :----- | :---------- |
-| `Keypair` | `framework` | Kyber-1024 public/secret key pair |
-| `SecureEnvelope` | `framework` | Carries Kyber ciphertext + AES payload + MRS chain |
-| `HybridCiphertextPacket` | `crypto::hybrid` | Inner packet: Kyber ciphertext + AES-GCM payload |
-| `MrsChain` | `sampler` | A 3-layer Diophantine chain with validity flag |
-| `DiophantinePair` | `core::diophantine` | Single `(A, B)` representation at one layer |
-| `TimeCode` | `security::timecode` | HMAC-SHA256 time-based authentication token |
-| `LweInstance` | `security::lwe` | LWE masking instance (`b = A·s + e`) |
-| `MerkleProof` | `security::merkle` | Merkle inclusion proof for k-acceptance |
-
 ### Low-Level Primitives
-
 ```rust
 // --- Sampler ---
-pub fn sample_three_layers(root_n: u64) -> Option<MrsChain>;
+pub fn sample_three_layers(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain>;
 
-// --- Crypto ---
-pub fn derive_hybrid_key(
-    kyber_ss: &[u8; KYBER_SSBYTES],
-    mrs_chain: &MrsChain,
-    session_id: &[u8]
-) -> Result<[u8; 32], &'static str>;
+// --- Security & Hardening Games ---
+pub fn run_with_temporal_barrier<F, T>(timeout: Duration, f: F) -> Option<T> where F: FnOnce() -> T, T: Zeroize;
+pub fn run_euf_cma_game(adversary: &dyn EufCmaAdversary, secret_anchor: &[u8]) -> bool;
+pub fn run_forward_secrecy_game(adversary: &dyn ForwardSecrecyAdversary, secret_anchor: &[u8], current_t: u64, rng: &mut impl RngCore) -> bool;
+```
 
-pub fn encrypt_payload_hybrid(
-    key: &[u8; 32], nonce: &[u8; 12],
-    plaintext: &[u8], associated_data: &[u8]
-) -> Result<Vec<u8>, &'static str>;
+---
 
-pub fn decrypt_payload_hybrid(
-    key: &[u8; 32], nonce: &[u8; 12],
-    ciphertext: &[u8], associated_data: &[u8]
-) -> Result<Vec<u8>, &'static str>;
+## Active Security Hardening & Formal Games
 
-// --- Security ---
-pub fn generate_timecode(secret_anchor: &[u8], timestamp: u64) -> Result<TimeCode, &'static str>;
+The framework implements strict runtime safeguards and interactive simulation games directly mapped from our formal computer-checked verification proofs (`MRS_AUTH.ec`):
 
-pub fn isolate_chain_parameter(
-    secret_s: &[u64], noise_e: &[u64], modulus_q: u64
-) -> Option<LweInstance>;
+- **Part I: Temporal Barrier & RAM Zeroization:** Standard execution logs are actively decoupled from cryptographic exposure. If the hardware execution timeline monitored via `std::time::Instant` hits a policy threshold, internal state registers are instantly overwritten via `.zeroize()` to completely mitigate timing side-channel leaks.
+- **Part III: EUF-CMA Forgery Resistance:** Natively tested via an integrated `BlindForger` adversary simulation to mathematically prove that unauthorized token generation on un-queried epochs is computationally infeasible.
+- **Part IV: Forward Secrecy Indistinguishability:** Evaluated against an active epoch compromise engine (`PassiveGuesser` environment) to ensure that historical keys remain structurally indistinguishable from pure binomial entropy noise.
 
-pub fn verify_lwe_match(
-    instance: &LweInstance, claimed_s: &[u64],
-    allowed_noise_bound: u64, modulus_q: u64
-) -> Choice;
-
-pub fn build_k_acceptance_root(
-    chain_hashes: &[[u8; 32]], k_param: usize
-) -> Option<[u8; 32]>;
-
-pub fn verify_k_acceptance_proof(
-    root: &[u8; 32], leaf_hash: &[u8; 32], proof: &MerkleProof
-) -> Choice;
+### 🔌 Feature Flag: Cryptographic Scale Scaling
+By default, the core engine leverages bare-metal `u64` types to ensure lightning-fast benchmarks. For advanced multi-word operations matching the paper's largest entropy parameter sets ($N \approx 10^{42}$), a modular `crypto-bigint` stack can be toggled on-demand:
+```bash
+cargo test --all-features
 ```
 
 ---
@@ -264,7 +218,7 @@ pub fn verify_k_acceptance_proof(
 All core security properties are machine-verified in **EasyCrypt**. The proof scripts live in the [`proofs/`](proofs/) directory.
 
 | File | Content |
-| :--- | :------ |
+| :--- | :--- |
 | [`MRS_Core.ec`](proofs/MRS_Core.ec) | Diophantine algebra, Popoviciu cardinality, Frobenius bound |
 | [`MRS_Chain.ec`](proofs/MRS_Chain.ec) | Construction and structural verification of MRS chains |
 | [`MRS_Sampling.ec`](proofs/MRS_Sampling.ec) | Correctness of the weighted CDF sampler (Forest Symmetry) |
@@ -273,20 +227,11 @@ All core security properties are machine-verified in **EasyCrypt**. The proof sc
 | [`MRS_AUTH_KEM_Hybrid.ec`](proofs/MRS_AUTH_KEM_Hybrid.ec) | IND-CCA2 security of the hybrid KEM construction |
 | [`MRS_Deny.ec`](proofs/MRS_Deny.ec) | Formal proof of coercion resistance / deniability |
 
-### Key Theorems
-
-- **`temporal_barrier_noninterference`** — Runtime abort limits prevent timing side-channels.
-- **`mrs_auth_kem_ind_cca2`** — The hybrid KEM satisfies IND-CCA2.
-- **`timecode_euf_cma`** — Time-code authentication is EUF-CMA secure.
-- **`timecode_forward_secrecy`** — Forward secrecy holds after long-term key compromise.
-- **`deniability_unbounded`** — For every authentic chain there exist infinitely many alibi chains information-theoretically indistinguishable to any adversary.
-
 ---
 
 ## Benchmarks
 
 Run the Criterion benchmark suite:
-
 ```bash
 cargo bench --bench sampler_bench
 ```
@@ -294,83 +239,23 @@ cargo bench --bench sampler_bench
 ### Sampling throughput (`u64`)
 
 | Scale | Root N | Typical Time |
-| :---- | :----- | :----------- |
-| Small | ~10⁶ | < 1 µs |
-| Moderate | ~10⁹ | ~1 µs |
-| Large | ~10¹² | ~1–2 µs |
-| Max `u64` | ~10¹⁸ | ~2–5 µs |
-
-> **Note:** The sampler uses an **O(1) triangle fast-path** that avoids materialising the full representation family. This makes sampling practical even for the largest `u64` values, while the previous CDF-based approach required O(R(N)) memory and time.
-
-Benchmark results are automatically generated in CI via [`.github/workflows/benchmark.yml`](.github/workflows/benchmark.yml).
-
----
-
-## Implementation Safeguards
-
-| Safeguard | Implementation |
-| :-------- | :------------- |
-| **Constant-Time** | All sensitive comparisons use `subtle::Choice` and `ConstantTimeEq`; no branch-on-secret. |
-| **Zeroize** | All secret-bearing structs (`Keypair`, `MrsChain`, `TimeCode`, `LweInstance`, `HybridCiphertextPacket`) derive `Zeroize` with `#[zeroize(drop)]`. |
-| **CSPRNG Sampling** | `sample_three_layers` draws from `OsRng` with rejection-sampling to eliminate modulo bias. |
-| **Temporal Barrier** | Sampler enforces runtime bounds; aborts safely on timeout. |
-| **Check-Ahead Filtering** | Triangle-condition validation + `R'(A) ≥ 2` lookahead guarantees every sampled path can be completed to a full 3-layer chain. |
-| **Branch-Free Selection** | CDF index selection uses `ConditionallySelectable` over the full candidate slice — no early break, no secret-dependent branches. |
-
----
-
-## Project Structure
-
-```
-MRS-Hybride-PQC/
-├── Cargo.toml
-├── LICENSE
-├── README.md
-├── .github/
-│   └── workflows/
-│       ├── rust.yml          # CI test runner
-│       └── benchmark.yml     # Criterion benchmark CI
-├── benches/
-│   └── sampler_bench.rs      # u64 performance benchmarks
-├── proofs/
-│   ├── MRS_Core.ec
-│   ├── MRS_Chain.ec
-│   ├── MRS_Sampling.ec
-│   ├── MRS_Honey.ec
-│   ├── MRS_AUTH.ec
-│   ├── MRS_AUTH_KEM_Hybrid.ec
-│   └── MRS_Deny.ec
-└── src/
-    ├── lib.rs                # Public API re-exports
-    ├── framework.rs          # MrsAuthFramework: encrypt/decrypt
-    ├── core/
-    │   ├── mod.rs
-    │   └── diophantine.rs    # N = 19A + 9B algebra, Popoviciu, Frobenius
-    ├── crypto/
-    │   ├── mod.rs
-    │   └── hybrid.rs         # HKDF key derivation + AES-256-GCM
-    ├── sampler/
-    │   ├── mod.rs
-    │   └── cdf_sampler.rs    # O(1) triangle sampler + branch-free CDF fallback
-    └── security/
-        ├── mod.rs
-        ├── timecode.rs       # HMAC-SHA256 time-codes
-        ├── lwe.rs            # LWE chain isolation
-        └── merkle.rs         # k-acceptance Merkle commitments
-```
+| :--- | :--- | :--- |
+| Small | $\sim 10^6$ | < 1 µs |
+| Moderate | $\sim 10^9$ | $\sim 1$ µs |
+| Large | $\sim 10^{12}$ | $\sim 1-2$ µs |
+| Max `u64` | $\sim 10^{18}$ | $\sim 2-5$ µs |
 
 ---
 
 ## Citation
 
 If you use MRS-AUTH in academic work, please cite:
-
 ```bibtex
 @misc{elissaoui2026forest,
-  title        = {The Forest Analogy: Full Specification of the MRS-AUTH Cryptographic Framework},
-  author       = {Bilal El Issaoui},
-  year         = {2026},
-  doi          = {10.5281/zenodo.21852606},
+  title = {The Forest Analogy: Full Specification of the MRS-AUTH Cryptographic Framework},
+  author = {Bilal El Issaoui},
+  year = {2026},
+  doi = {10.5281/zenodo.21852606},
   howpublished = {Zenodo}
 }
 ```
@@ -380,13 +265,11 @@ If you use MRS-AUTH in academic work, please cite:
 ## Disclaimer
 
 > **Research Prototype — Not for Production Use.**
->
-> MRS-AUTH is an active **research-phase cryptographic framework**. It has not undergone independent third-party security audit, formal code review, or red-team penetration testing. The implementation, protocol integration, and deniability guarantees are subject to ongoing academic scrutiny and refinement.
->
-> **Do not deploy in production environments** without further independent security review. The deniability properties require correct application-layer protocol integration; incorrect usage may void the information-theoretic guarantees claimed in the formal specification.
+> MRS-AUTH is an active research-phase cryptographic framework. It has not undergone independent third-party security audit, formal code review, or red-team penetration testing. Do not deploy in production environments without further independent security review.
 
 ---
 
 ## License
 
 This project is licensed under the **Apache-2.0** — see [LICENSE](LICENSE) for details.
+
