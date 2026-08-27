@@ -2,6 +2,7 @@
 //! specifications from `MRS_AUTH_.ec`.
 
 use std::collections::HashSet;
+use std::cell::RefCell;
 use std::time::{Instant, Duration};
 use rand::RngCore;
 use zeroize::Zeroize;
@@ -69,16 +70,17 @@ pub trait EufCmaAdversary {
 
 /// EUF-CMA Forgery Security Game. Returns true if the attacker successfully forges a token.
 pub fn run_euf_cma_game(adversary: &dyn EufCmaAdversary, secret_anchor: &[u8]) -> bool {
-    let mut queried_timestamps = HashSet::new();
+    // Use RefCell to allow mutating the HashSet inside an immutable Fn closure
+    let queried_timestamps = RefCell::new(HashSet::new());
 
     let sign_oracle = |t: u64| -> [u8; 32] {
-        queried_timestamps.insert(t);
+        queried_timestamps.borrow_mut().insert(t);
         generate_timecode(secret_anchor, t).unwrap().value
     };
 
     let (t_star, sig_star) = adversary.attack(&sign_oracle);
 
-    if queried_timestamps.contains(&t_star) {
+    if queried_timestamps.borrow().contains(&t_star) {
         return false; // Attack invalid: timestamp was already leaked
     }
 
@@ -129,7 +131,6 @@ pub fn run_forward_secrecy_game(
 #[cfg(test)]
 mod security_tests {
     use super::*;
-    use rand::rngs::OsRng;
 
     #[test]
     fn test_temporal_barrier_success() {
