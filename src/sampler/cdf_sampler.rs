@@ -38,6 +38,10 @@ pub fn validate_triangle_condition(b: u64, x: u64) -> bool {
 /// with respect to X = n itself. This is the number of triangle-valid
 /// alibis layer `n` would have at the next layer -- the correct measure
 /// for check-ahead, as opposed to the raw (unfiltered) Popoviciu count.
+///
+/// BRUTE-FORCE VERSION -- O(N). Kept only as a correctness oracle for the
+/// closed-form version below (see the `closed_form_tests` module). Do not
+/// call this from the sampler hot path; use `count_triangle_filtered_closed_form`.
 pub fn count_triangle_filtered(n: u64) -> u64 {
     generate_representation_family(n)
         .iter()
@@ -50,6 +54,8 @@ pub fn count_triangle_filtered(n: u64) -> u64 {
 /// raw Popoviciu cardinality: the latter can be positive while zero valid
 /// continuations remain after triangle filtering, which would undermine
 /// the check-ahead guarantee.
+///
+/// BRUTE-FORCE VERSION -- O(N). See `check_ahead_valid_closed_form`.
 #[inline]
 pub fn check_ahead_valid(a_value: u64) -> bool {
     count_triangle_filtered(a_value) >= 2
@@ -62,6 +68,10 @@ pub fn check_ahead_valid(a_value: u64) -> bool {
 /// chains per candidate, not the raw Popoviciu cardinality from earlier
 /// versions. Returns the filtered candidates and their weights in the
 /// same order.
+///
+/// BRUTE-FORCE VERSION -- O(N^2) overall when composed with `count_triangle_filtered`.
+/// Kept only for the correctness tests. See `sample_three_layers` for the
+/// closed-form replacement used in production.
 pub fn calculate_layer_weights(n: u64) -> (Vec<DiophantinePair>, Vec<u64>) {
     let family = generate_representation_family(n);
     let mut candidates = Vec::with_capacity(family.len());
@@ -80,6 +90,89 @@ pub fn calculate_layer_weights(n: u64) -> (Vec<DiophantinePair>, Vec<u64>) {
     }
 
     (candidates, weights)
+}
+
+// ---------------------------------------------------------------------
+// Closed-form (O(1)) replacements based on the 19-9 system structure.
+//
+// N = 19A + 9B, A,B >= 0. Since gcd(19,9) = 1, all non-negative
+// representations are indexed by k = 0..=K_max via:
+//   A_k = A0 + 9k
+//   B_k = B0 - 19k
+// where A0 = dr(N) (the published central result of the 19-9 system) and
+// B0 = (N - 19*A0) / 9.
+//
+// Because 19 ≡ 1 (mod 9), dr(B_k) cycles with period 9 in k, decreasing
+// by 1 (mod 9) each step. The triangle condition dr(B_k) == target
+// therefore holds for exactly one residue class k ≡ k0 (mod 9), which
+// turns every enumeration-based count/lookup into an O(1) computation.
+// ---------------------------------------------------------------------
+
+/// A0 in the 19-9 system: A0 = dr(N).
+#[inline]
+fn calculate_anchor(n: u64) -> u64 {
+    digital_root(n)
+}
+
+/// B0 = (N - 19*A0) / 9. Always an exact integer division for valid N,
+/// since 19 ≡ 1 (mod 9) guarantees A0 ≡ N (mod 9).
+#[inline]
+fn calculate_b0(n: u64, a0: u64) -> u64 {
+    (n - 19 * a0) / 9
+}
+
+/// Closed-form replacement for `count_triangle_filtered`: O(1) instead of
+/// O(N) enumeration. Counts how many representations N = 19A + 9B (with
+/// A,B >= 0) satisfy the triangle condition dr(B) == dr(2*dr(N)).
+pub fn count_triangle_filtered_closed_form(n: u64) -> u64 {
+    let a0 = calculate_anchor(n);
+    let b0 = calculate_b0(n, a0);
+    let k_max = b0 / 19;
+
+    let target = digital_root(2 * a0);
+
+    // k0 = (b0 - target) mod 9, computed branch-free.
+    // Safe: target in [1,9], so b0 + 9 - target is always >= 0.
+    let k0 = (b0 + 9 - target) % 9;
+
+    if k0 > k_max {
+        0
+    } else {
+        (k_max - k0) / 9 + 1
+    }
+}
+
+/// Closed-form replacement for `check_ahead_valid`: O(1) instead of O(N).
+#[inline]
+pub fn check_ahead_valid_closed_form(a_value: u64) -> bool {
+    count_triangle_filtered_closed_form(a_value) >= 2
+}
+
+/// Given N and a 0-based index `t` into its triangle-valid representations
+/// (caller ensures `t < count_triangle_filtered_closed_form(n)`), returns
+/// the t-th such (A, B) pair directly -- without enumerating or filtering
+/// any of the other (non-valid) representations.
+pub fn sample_triangle_pair(n: u64, t: u64) -> Option<DiophantinePair> {
+    let a0 = calculate_anchor(n);
+    let b0 = calculate_b0(n, a0);
+    let k_max = b0 / 19;
+
+    let target = digital_root(2 * a0);
+    let k0 = (b0 + 9 - target) % 9;
+
+    if k0 > k_max {
+        return None;
+    }
+
+    let k = k0 + 9 * t;
+    if k > k_max {
+        return None; // defensive; shouldn't trigger if t is bounds-checked
+    }
+
+    let a = a0 + 9 * k;
+    let b = b0 - 19 * k;
+
+    Some(DiophantinePair { a, b })
 }
 
 /// Draws a cryptographically random integer in [0, bound) without modulo
@@ -105,15 +198,13 @@ fn uniform_below(bound: u64, rng: &mut impl RngCore) -> u64 {
 /// Omega(root_n) with exactly equal probability (Forest Symmetry
 /// Theorem).
 ///
-/// This replaces the earlier implementation, which picked the FIRST valid
-/// pair from `family` with no randomness at all -- that was fully
-/// deterministic (the same root_n always gave the same chain) and
-/// therefore offered no secret, unpredictable index.
-///
-/// **API change:** the `seed_x` argument has been removed. The triangle
-/// condition now checks against `current_n` (the actual parent value per
-/// layer) instead of a fixed external value. Calls elsewhere in the
-/// codebase must be updated to `sample_three_layers(root_n)`.
+/// CLOSED-FORM VERSION: candidates are generated directly via
+/// `sample_triangle_pair`/`count_triangle_filtered_closed_form` instead of
+/// enumerating `generate_representation_family(current_n)` and filtering.
+/// Per layer this is O(triangle_count) with O(1) work per candidate,
+/// instead of the previous O(N) candidates each requiring an O(N)
+/// sub-computation (O(N^2) total). `root_n` can now be arbitrarily large
+/// without the multi-hour blowup seen with brute-force enumeration.
 pub fn sample_three_layers(root_n: u64) -> Option<MrsChain> {
     const DEPTH: usize = 3;
     let mut chain = Vec::with_capacity(DEPTH);
@@ -122,27 +213,38 @@ pub fn sample_three_layers(root_n: u64) -> Option<MrsChain> {
 
     for layer in 0..DEPTH {
         let is_last_layer = layer == DEPTH - 1;
-        let family = generate_representation_family(current_n);
 
-        let mut candidates: Vec<DiophantinePair> = Vec::new();
-        let mut weights: Vec<u64> = Vec::new();
+        let a0 = calculate_anchor(current_n);
+        let b0 = calculate_b0(current_n, a0);
+        let k_max = b0 / 19;
+        let target = digital_root(2 * a0);
+        let k0 = (b0 + 9 - target) % 9;
 
-        for pair in family {
-            if !validate_triangle_condition(pair.b, current_n) {
-                continue;
-            }
-            if !is_last_layer && !check_ahead_valid(pair.a) {
+        if k0 > k_max {
+            return None; // no triangle-valid representation at this layer
+        }
+        let triangle_count = (k_max - k0) / 9 + 1;
+
+        let mut candidates: Vec<DiophantinePair> = Vec::with_capacity(triangle_count as usize);
+        let mut weights: Vec<u64> = Vec::with_capacity(triangle_count as usize);
+
+        for t in 0..triangle_count {
+            let k = k0 + 9 * t;
+            let a = a0 + 9 * k;
+            let b = b0 - 19 * k;
+
+            if !is_last_layer && !check_ahead_valid_closed_form(a) {
                 continue;
             }
             let w = if is_last_layer {
                 1
             } else {
-                count_triangle_filtered(pair.a)
+                count_triangle_filtered_closed_form(a)
             };
             if w == 0 {
                 continue;
             }
-            candidates.push(pair);
+            candidates.push(DiophantinePair { a, b });
             weights.push(w);
         }
 
@@ -230,9 +332,14 @@ mod tests {
 
     #[test]
     fn test_sampler_is_not_deterministic() {
-        // Use a larger root_n with enough representation multiplicity
-        // to guarantee multiple distinct valid 3-layer chains exist.
-        let root_n = 10_000_000_001u64;
+        // NOTE: root_n reduced back from 10_000_000_001 to 200_001.
+        // That earlier value combined with the brute-force O(N) sampler
+        // caused multi-hour CI runs (O(N^2) per layer). This value already
+        // admits enough representation multiplicity to exercise the
+        // randomness check. With the closed-form sampler above, much
+        // larger root_n values are now cheap too -- see
+        // `test_sampler_is_not_deterministic_large_n_closed_form`.
+        let root_n = 200_001;
 
         let mut seen = std::collections::HashSet::new();
         let mut attempts = 0;
@@ -245,9 +352,6 @@ mod tests {
             }
         }
 
-        // Either we saw multiple different chains (randomness works),
-        // or the root_n genuinely admits only one valid chain —
-        // which is mathematically valid and not a sampler bug.
         assert!(
             seen.len() > 1 || attempts <= 1,
             "sampler produced the same chain {} times for root_n={} — \
@@ -268,4 +372,102 @@ mod tests {
             assert!(w > 0);
         }
     }
+}
+
+#[cfg(test)]
+mod closed_form_tests {
+    use super::*;
+
+    /// Independent cross-check of K_max via Popoviciu's formula for two
+    /// coprime coefficients (a=19, b=9):
+    ///
+    ///   R(N) = N/(ab) - {b^-1 * N / a} - {a^-1 * N / b} + 1
+    ///
+    /// with {x} the fractional part. Here b^-1 mod a = 9^-1 mod 19 = 17
+    /// (since 9*17 = 153 = 8*19 + 1), and a^-1 mod b = 19^-1 mod 9 = 1
+    /// (since 19 ≡ 1 mod 9). Uses f64 because Popoviciu's formula is
+    /// defined over the reals -- this is a test-only oracle, never called
+    /// from the sampler hot path.
+    fn popoviciu_r_n(n: u64) -> u64 {
+        const INV_9_MOD_19: u64 = 17;
+
+        let n_f = n as f64;
+        let term1 = n_f / 171.0;
+        let frac_a = ((INV_9_MOD_19 * n) % 19) as f64 / 19.0;
+        let frac_b = (n % 9) as f64 / 9.0; // inverse of 19 mod 9 is 1, so this is just {N/9}
+
+        (term1 - frac_a - frac_b + 1.0).round() as u64
+    }
+
+    #[test]
+    fn k_max_matches_popoviciu_r_n_minus_one() {
+        for n in [201u64, 1_001, 12_345, 200_001, 999_999, 10_000_000_001] {
+            let a0 = calculate_anchor(n);
+            let b0 = calculate_b0(n, a0);
+            let k_max = b0 / 19;
+
+            let r_n = popoviciu_r_n(n);
+            assert_eq!(
+                k_max,
+                r_n - 1,
+                "k_max mismatch at n={}: b0/19={} vs R(N)-1={}",
+                n, k_max, r_n - 1
+            );
         }
+    }
+
+    #[test]
+    fn closed_form_matches_brute_force_count() {
+        for n in [201u64, 1_001, 12_345, 200_001, 999_999] {
+            assert_eq!(
+                count_triangle_filtered_closed_form(n),
+                count_triangle_filtered(n),
+                "count mismatch at n={}", n
+            );
+        }
+    }
+
+    #[test]
+    fn closed_form_pairs_match_brute_force_set() {
+        for n in [201u64, 1_001, 12_345] {
+            let brute: std::collections::HashSet<(u64, u64)> = generate_representation_family(n)
+                .into_iter()
+                .filter(|p| validate_triangle_condition(p.b, n))
+                .map(|p| (p.a, p.b))
+                .collect();
+
+            let count = count_triangle_filtered_closed_form(n);
+            let closed: std::collections::HashSet<(u64, u64)> = (0..count)
+                .map(|t| sample_triangle_pair(n, t).unwrap())
+                .map(|p| (p.a, p.b))
+                .collect();
+
+            assert_eq!(brute, closed, "set mismatch at n={}", n);
+        }
+    }
+
+    #[test]
+    fn test_sampler_is_not_deterministic_large_n_closed_form() {
+        // With the closed-form sampler, a root_n this large is now cheap
+        // (O(1) per candidate instead of O(N)), unlike the original
+        // brute-force version that hung for 3+ hours at this value.
+        let root_n = 10_000_000_001u64;
+
+        let mut seen = std::collections::HashSet::new();
+        let mut attempts = 0;
+
+        for _ in 0..100 {
+            if let Some(chain) = sample_three_layers(root_n) {
+                let key: Vec<(u64, u64)> = chain.layers.iter().map(|p| (p.a, p.b)).collect();
+                seen.insert(key);
+                attempts += 1;
+            }
+        }
+
+        assert!(
+            seen.len() > 1 || attempts <= 1,
+            "sampler produced the same chain {} times for root_n={}",
+            attempts, root_n
+        );
+    }
+}
