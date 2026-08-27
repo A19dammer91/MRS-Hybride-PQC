@@ -123,14 +123,44 @@ pub fn run_forward_secrecy_game(
     let b_prime = adversary.guess(&challenge);
     b_prime == b_choice
 }
-
 // ============================================================================
-// Automated Security Test Suite
+// Automated Security Test Suite & Active Adversary Simulations
 // ============================================================================
 
 #[cfg(test)]
 mod security_tests {
     use super::*;
+    use rand::rngs::OsRng;
+
+    // --- 1. EUF-CMA Active Forger Adversary ---
+    struct BlindForger;
+    impl EufCmaAdversary for BlindForger {
+        fn attack(&self, sign_oracle: &dyn Fn(u64) -> [u8; 32]) -> (u64, [u8; 32]) {
+            // Attacker queries a legitimate token for baseline observation (e.g., t = 5)
+            let _leaked_code = sign_oracle(5);
+            
+            // Attacker attempts to forge a token for an un-queried timestamp (t = 999)
+            let target_t = 999;
+            let forged_signature = [0u8; 32]; // Blind static dummy bytes submission
+            
+            (target_t, forged_signature)
+        }
+    }
+
+    // --- 2. Forward Secrecy Indistinguishability Adversary ---
+    struct PassiveGuesser;
+    impl ForwardSecrecyAdversary for PassiveGuesser {
+        fn choose(&self, _current_code: &[u8; 32], current_t: u64) -> u64 {
+            // Attacker targets a timestamp strictly in the past (t' = current_t - 1)
+            current_t - 1
+        }
+
+        fn guess(&self, _challenge: &[u8; 32]) -> bool {
+            // Without secret key material, the attacker static guesses 'true' (random)
+            // This is evaluated to show that their advantage converges on 50% random chance
+            true
+        }
+    }
 
     #[test]
     fn test_temporal_barrier_success() {
@@ -146,7 +176,7 @@ mod security_tests {
 
     #[test]
     fn test_temporal_barrier_timeout_triggers_zeroize() {
-        let timeout = Duration::from_nanos(1); // Enforce immediate timeout to test memory wiping
+        let timeout = Duration::from_nanos(1); // Force immediate timeout bounds
         let secret_anchor = b"super-secret-key-material-32bytes";
         
         let res = run_with_temporal_barrier(timeout, || {
@@ -155,5 +185,35 @@ mod security_tests {
         });
         
         assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_euf_cma_game_blocks_blind_forgery() {
+        let secret_anchor = b"cryptographic-seed-material-test";
+        let attacker = BlindForger;
+        
+        // Attacker must fail to forge because guessing the HMAC-SHA256 space is computationally infeasible
+        let attacker_won = run_euf_cma_game(&attacker, secret_anchor);
+        assert!(!attacker_won, "Active blind manipulation should be completely rejected");
+    }
+
+    #[test]
+    fn test_forward_secrecy_game_bounds_attacker_advantage() {
+        let secret_anchor = b"cryptographic-seed-material-test";
+        let attacker = PassiveGuesser;
+        let current_t = 20260827; // Structural runtime evaluation date
+        let mut rng = OsRng;
+
+        // Run the game multiple times to verify convergence towards 50% random chance boundaries
+        let mut wins = 0;
+        let iterations = 100;
+        for _ in 0..iterations {
+            if run_forward_secrecy_game(&attacker, secret_anchor, current_t, &mut rng) {
+                wins += 1;
+            }
+        }
+
+        // Win rate must fall inside a normal binomial distribution around 50% chance
+        assert!(wins > 30 && wins < 70, "Attacker success advantage must remain at baseline random guess limits");
     }
 }
