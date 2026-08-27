@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use mrs_auth_pqc::sampler::sample_three_layers;
+use rand::rngs::OsRng;
 
 fn bench_sampler(c: &mut Criterion) {
     let mut group = c.benchmark_group("sample_three_layers");
@@ -11,7 +12,8 @@ fn bench_sampler(c: &mut Criterion) {
     ];
     for (label, n) in scales {
         group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, root| {
-            b.iter(|| black_box(sample_three_layers(black_box(*root))));
+            let mut rng = OsRng;
+            b.iter(|| black_box(sample_three_layers(black_box(*root), &mut rng)));
         });
     }
     group.finish();
