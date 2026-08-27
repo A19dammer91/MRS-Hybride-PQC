@@ -100,7 +100,9 @@ impl MrsAuthFramework {
         let (kyber_ciphertext, shared_secret) = encapsulate(public_key, &mut rng)?;
 
         let root_n = derive_session_root(session_id);
-        let mrs_chain = sample_three_layers(root_n).ok_or(FrameworkError::ChainSamplingFailed)?;
+        
+        // GECORRIGEERD: Voeg &mut rng toe als tweede argument voor de u64 sampler engine
+        let mrs_chain = sample_three_layers(root_n, &mut rng).ok_or(FrameworkError::ChainSamplingFailed)?;
 
         let hybrid_key = derive_hybrid_key(&shared_secret, &mrs_chain, session_id)
             .map_err(FrameworkError::Crypto)?;
