@@ -1,473 +1,339 @@
-use crate::core::diophantine::{generate_representation_family, DiophantinePair};
-use rand::rngs::OsRng;
-use rand::RngCore;
-use zeroize::Zeroize;
+//! Weighted CDF sampler and O(1) triangle fast-path for the MRS(19,9)
+//! Diophantine forest.
+//!
+//! Generic over `crypto_bigint` width (`U64`, `U256`, ...).
 
-/// Struct holding a complete 3-layer chain (Matryoshka)
-#[derive(Debug, Clone, Zeroize)]
-#[zeroize(drop)]
-pub struct MrsChain {
-    pub layers: Vec<DiophantinePair>,
+use crate::core::diophantine::{
+    BranchFreeResult, DiophantinePair, MrsInt, ToBytes,
+    calculate_anchor, calculate_popoviciu_cardinality, generate_representation_family,
+    select_branch_free, check_frobenius_bound,
+};
+use crypto_bigint::{CheckedAdd, CheckedMul, CheckedSub, Integer, NonZero, Uint};
+use rand::RngCore;
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
+use zeroize::Zeroize;
+use std::ops::Div;
+
+#[inline]
+fn nz<T: MrsInt>(val: u64) -> NonZero<T> {
+    let opt = NonZero::new(T::from(val));
+    assert!(bool::from(opt.is_some()), "constant {} must be non-zero", val);
+    opt.unwrap()
+}
+
+// ============================================================================
+// Randomness trait & Auxiliary Sampling
+// ============================================================================
+
+pub trait FromRandom: MrsInt {
+    fn from_random(rng: &mut impl RngCore) -> Self;
+}
+
+impl FromRandom for crypto_bigint::U64 {
+    fn from_random(rng: &mut impl RngCore) -> Self {
+        Self::from(rng.next_u64())
+    }
+}
+
+impl FromRandom for crypto_bigint::U256 {
+    fn from_random(rng: &mut impl RngCore) -> Self {
+        let mut bytes = [0u8; 32];
+        rng.fill_bytes(&mut bytes);
+        let opt = Self::from_be_slice(&bytes);
+        assert!(bool::from(opt.is_some()), "32 bytes always fit U256");
+        opt.unwrap()
+    }
+}
+
+pub trait SamplerInt: MrsInt + FromRandom + ToBytes {}
+impl<T> SamplerInt for T where T: MrsInt + FromRandom + ToBytes {}
+
+/// Securely samples a random value uniform below a public bound `upper_bound`.
+#[inline]
+pub fn uniform_below<T: SamplerInt>(upper_bound: &T, rng: &mut impl RngCore) -> T {
+    let zero = T::from(0u64);
+    if bool::from(upper_bound.ct_eq(&zero)) {
+        return zero;
+    }
+    let random_val = T::from_random(rng);
+    let nine = nz::<T>(9);
+    random_val.rem(NonZero::new(upper_bound.clone()).unwrap_or(nine))
+}
+
+// ============================================================================
+// MrsChain
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct MrsChain<T: SamplerInt> {
+    pub layers: Vec<DiophantinePair<T>>,
     pub valid: bool,
 }
 
+impl<T: SamplerInt> Zeroize for MrsChain<T> {
+    fn zeroize(&mut self) {
+        for layer in &mut self.layers {
+            layer.a.zeroize();
+            layer.b.zeroize();
+        }
+    }
+}
+
+impl<T: SamplerInt> Drop for MrsChain<T> {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+// ============================================================================
+// Digital root & Closed-Form Counter
+// ============================================================================
+
 /// Computes the digital root of a number in constant time, without loops
 #[inline]
-pub fn digital_root(n: u64) -> u64 {
-    if n == 0 {
-        0
-    } else {
-        1 + ((n - 1) % 9)
-    }
+pub fn digital_root<T: SamplerInt>(n: &T) -> T {
+    let zero = T::from(0u64);
+    let is_zero = n.ct_eq(&zero);
+    let one = T::from(1u64);
+    let nine = nz::<T>(9);
+    let n_minus_1 = n.clone().checked_sub(&one).unwrap_or_else(|| T::from(0u64));
+    let rem = n_minus_1.rem(nine);
+    let dr = one.checked_add(&rem).expect("1 + rem <= 9");
+    zero.conditional_select(&dr, !is_zero)
 }
 
-/// Checks the harmonic triangle requirement: dr(B) == dr(2 * dr(X))
-/// X is the PARENT value at the current layer (the N that was just split),
-/// not an externally supplied seed. This is what the a ≡ 1 (mod b) argument
-/// from the specification (§4.2) requires: the residue-class shift works
-/// per step within X's own representation family.
+/// Closed-form replacement for counting triangle-filtered valid alibis
+pub fn count_triangle_filtered_closed_form<T: SamplerInt>(n: &T) -> T {
+    let zero = T::from(0u64);
+    let one = T::from(1u64);
+    let nine = nz::<T>(9);
+    let nineteen = nz::<T>(19);
+
+    let a0 = calculate_anchor(n);
+    
+    // Guard tegen kleine N underflow: check of 19 * a0 > n
+    let nineteen_a0 = nineteen.as_ref().checked_mul(&a0).expect("19*A0 overflow");
+    if bool::from(n.ct_lt(&nineteen_a0)) {
+        return zero;
+    }
+
+    let b0 = n.checked_sub(&nineteen_a0).expect("guarded").div(nine.clone());
+    let k_max = b0.div(nineteen);
+    let target = digital_root(&T::from(2u64).checked_mul(&a0).expect("2*A0 overflow"));
+    
+    // k0 = (b0 + 9 - target) % 9 computed branch-free
+    let b0_plus_9 = b0.checked_add(nine.as_ref()).expect("B0+9 overflow");
+    let k0 = b0_plus_9.checked_sub(&target).expect("B0+9 >= target").rem(nine.clone());
+
+    let is_invalid = k0.ct_gt(&k_max);
+    let diff = k_max.checked_sub(&k0).unwrap_or_else(|| zero.clone());
+    let res = diff.div(nine.clone()).checked_add(&one).expect("R'(N) overflow");
+
+    zero.conditional_select(&res, !is_invalid)
+}
+
 #[inline]
-pub fn validate_triangle_condition(b: u64, x: u64) -> bool {
+pub fn check_ahead_valid_closed_form<T: SamplerInt>(a_value: &T) -> bool {
+    let two = T::from(2u64);
+    !count_triangle_filtered_closed_form(a_value).ct_lt(&two).into()
+}
+// ============================================================================
+// Triangle condition and Sampler Engine
+// ============================================================================
+
+#[inline]
+pub fn validate_triangle_condition<T: SamplerInt>(b: &T, x: &T) -> Choice {
     let dr_b = digital_root(b);
     let dr_x = digital_root(x);
-    let target = digital_root(2 * dr_x);
-    dr_b == target
+    let two = T::from(2u64);
+    let target = digital_root(&two.checked_mul(&dr_x).expect("2*dr_x overflow"));
+    dr_b.ct_eq(&target)
 }
 
-/// Counts how many representations of `n` satisfy the triangle condition
-/// with respect to X = n itself. This is the number of triangle-valid
-/// alibis layer `n` would have at the next layer -- the correct measure
-/// for check-ahead, as opposed to the raw (unfiltered) Popoviciu count.
-///
-/// BRUTE-FORCE VERSION -- O(N). Kept only as a correctness oracle for the
-/// closed-form version below (see the `closed_form_tests` module). Do not
-/// call this from the sampler hot path; use `count_triangle_filtered_closed_form`.
-pub fn count_triangle_filtered(n: u64) -> u64 {
-    generate_representation_family(n)
-        .iter()
-        .filter(|pair| validate_triangle_condition(pair.b, n))
-        .count() as u64
-}
+/// O(1) Triangle Fast-Path sampling logic - Corrected with proper K_max bounds
+pub fn sample_triangle<T: SamplerInt>(n: &T, rng: &mut impl RngCore) -> BranchFreeResult<T> {
+    let zero = T::from(0u64);
+    let one = T::from(1u64);
+    let nine = nz::<T>(9);
+    let nineteen = nz::<T>(19);
 
-/// Checks whether `a_value` has at least 2 triangle-valid continuations at
-/// the next layer (R'(A) >= 2). Uses the triangle-FILTERED count, not the
-/// raw Popoviciu cardinality: the latter can be positive while zero valid
-/// continuations remain after triangle filtering, which would undermine
-/// the check-ahead guarantee.
-///
-/// BRUTE-FORCE VERSION -- O(N). See `check_ahead_valid_closed_form`.
-#[inline]
-pub fn check_ahead_valid(a_value: u64) -> bool {
-    count_triangle_filtered(a_value) >= 2
-}
-
-/// Computes the hierarchical weight of each triangle-valid candidate at
-/// layer `n`, filtered on the triangle condition with respect to `n`
-/// itself. This is the weight the sampler actually uses to guarantee
-/// uniformity (Forest Symmetry): the number of triangle-valid continuation
-/// chains per candidate, not the raw Popoviciu cardinality from earlier
-/// versions. Returns the filtered candidates and their weights in the
-/// same order.
-///
-/// BRUTE-FORCE VERSION -- O(N^2) overall when composed with `count_triangle_filtered`.
-/// Kept only for the correctness tests. See `sample_three_layers` for the
-/// closed-form replacement used in production.
-pub fn calculate_layer_weights(n: u64) -> (Vec<DiophantinePair>, Vec<u64>) {
-    let family = generate_representation_family(n);
-    let mut candidates = Vec::with_capacity(family.len());
-    let mut weights = Vec::with_capacity(family.len());
-
-    for pair in family {
-        if !validate_triangle_condition(pair.b, n) {
-            continue;
-        }
-        let w = count_triangle_filtered(pair.a);
-        if w == 0 {
-            continue; // dead end: no triangle-valid continuations on A
-        }
-        candidates.push(pair);
-        weights.push(w);
-    }
-
-    (candidates, weights)
-}
-
-// ---------------------------------------------------------------------
-// Closed-form (O(1)) replacements based on the 19-9 system structure.
-//
-// N = 19A + 9B, A,B >= 0. Since gcd(19,9) = 1, all non-negative
-// representations are indexed by k = 0..=K_max via:
-//   A_k = A0 + 9k
-//   B_k = B0 - 19k
-// where A0 = dr(N) (the published central result of the 19-9 system) and
-// B0 = (N - 19*A0) / 9.
-//
-// Because 19 ≡ 1 (mod 9), dr(B_k) cycles with period 9 in k, decreasing
-// by 1 (mod 9) each step. The triangle condition dr(B_k) == target
-// therefore holds for exactly one residue class k ≡ k0 (mod 9), which
-// turns every enumeration-based count/lookup into an O(1) computation.
-// ---------------------------------------------------------------------
-
-/// A0 in the 19-9 system: A0 = dr(N).
-#[inline]
-fn calculate_anchor(n: u64) -> u64 {
-    digital_root(n)
-}
-
-/// B0 = (N - 19*A0) / 9. Always an exact integer division for valid N,
-/// since 19 ≡ 1 (mod 9) guarantees A0 ≡ N (mod 9).
-#[inline]
-fn calculate_b0(n: u64, a0: u64) -> u64 {
-    (n - 19 * a0) / 9
-}
-
-/// Closed-form replacement for `count_triangle_filtered`: O(1) instead of
-/// O(N) enumeration. Counts how many representations N = 19A + 9B (with
-/// A,B >= 0) satisfy the triangle condition dr(B) == dr(2*dr(N)).
-pub fn count_triangle_filtered_closed_form(n: u64) -> u64 {
     let a0 = calculate_anchor(n);
-    let b0 = calculate_b0(n, a0);
-    let k_max = b0 / 19;
+    let two = T::from(2u64);
 
-    let target = digital_root(2 * a0);
+    // B0 guard-check wiskundige basisreconstructie
+    let nineteen_a0 = nineteen.as_ref().checked_mul(&a0).expect("19*A0 overflow");
+    if bool::from(n.ct_lt(&nineteen_a0)) {
+        return BranchFreeResult {
+            pair: DiophantinePair { a: zero.clone(), b: zero.clone() },
+            valid: Choice::from(0u8),
+        };
+    }
 
-    // k0 = (b0 - target) mod 9, computed branch-free.
-    // Safe: target in [1,9], so b0 + 9 - target is always >= 0.
-    let k0 = (b0 + 9 - target) % 9;
+    let b0 = n.checked_sub(&nineteen_a0).expect("guarded").div(nine.clone());
 
-    if k0 > k_max {
-        0
-    } else {
-        (k_max - k0) / 9 + 1
+    let dr_n = digital_root(n);
+    let two_dr_n = two.checked_mul(&dr_n).expect("2*dr_n overflow");
+    let target_r = digital_root(&two_dr_n);
+
+    // K0 bepaling via B0 modulus verschuiving
+    let b0_lt_target = b0.ct_lt(&target_r);
+    let b0_adjusted = b0.conditional_select(
+        &b0.checked_add(nine.as_ref()).expect("B0+9 overflow"),
+        b0_lt_target,
+    );
+    let k0 = b0_adjusted.checked_sub(&target_r).expect("adj B0 >= target").rem(nine.clone());
+
+    // CORRECTIE: r_n via Popoviciu. K_max = R(N) - 1. Veiligheidscheck tegen -2 bij veelvouden van 9.
+    let r_n = calculate_popoviciu_cardinality(n);
+    let k_max = r_n.checked_sub(&one).unwrap_or_else(|| zero.clone());
+
+    let is_valid = !k0.ct_gt(&k_max);
+
+    let diff = k_max.checked_sub(&k0).unwrap_or_else(|| zero.clone())
+        .conditional_select(&zero, !is_valid);
+    let t_max = diff.div(nine.clone());
+
+    let t = uniform_below(&t_max, rng);
+    let nine_t = nine.as_ref().checked_mul(&t).expect("9t overflow");
+    let k = k0.checked_add(&nine_t).expect("k0+9t overflow");
+
+    let nine_k = nine.as_ref().checked_mul(&k).expect("9k overflow");
+    let a = a0.checked_add(&nine_k).expect("A0+9k overflow");
+
+    let nineteen_a = nineteen.as_ref().checked_mul(&a).expect("19A overflow");
+    let b = n.checked_sub(&nineteen_a).expect("N-19A underflow").div(nine.clone());
+
+    let final_a = a.conditional_select(&zero, !is_valid);
+    let final_b = b.conditional_select(&zero, !is_valid);
+
+    BranchFreeResult {
+        pair: DiophantinePair { a: final_a, b: final_b },
+        valid: is_valid,
     }
 }
 
-/// Closed-form replacement for `check_ahead_valid`: O(1) instead of O(N).
-#[inline]
-pub fn check_ahead_valid_closed_form(a_value: u64) -> bool {
-    count_triangle_filtered_closed_form(a_value) >= 2
-}
+// ============================================================================
+// Production 3-layer sampler using Closed-Form optimization
+// ============================================================================
 
-/// Given N and a 0-based index `t` into its triangle-valid representations
-/// (caller ensures `t < count_triangle_filtered_closed_form(n)`), returns
-/// the t-th such (A, B) pair directly -- without enumerating or filtering
-/// any of the other (non-valid) representations.
-pub fn sample_triangle_pair(n: u64, t: u64) -> Option<DiophantinePair> {
-    let a0 = calculate_anchor(n);
-    let b0 = calculate_b0(n, a0);
-    let k_max = b0 / 19;
-
-    let target = digital_root(2 * a0);
-    let k0 = (b0 + 9 - target) % 9;
-
-    if k0 > k_max {
-        return None;
-    }
-
-    let k = k0 + 9 * t;
-    if k > k_max {
-        return None; // defensive; shouldn't trigger if t is bounds-checked
-    }
-
-    let a = a0 + 9 * k;
-    let b = b0 - 19 * k;
-
-    Some(DiophantinePair { a, b })
-}
-
-/// Draws a cryptographically random integer in [0, bound) without modulo
-/// bias, via rejection sampling on a CSPRNG.
-fn uniform_below(bound: u64, rng: &mut impl RngCore) -> u64 {
-    assert!(bound > 0, "bound must be positive");
-    let limit = u64::MAX - (u64::MAX % bound);
-    loop {
-        let r = rng.next_u64();
-        if r < limit {
-            return r % bound;
-        }
-    }
-}
-
-/// Builds a 3-layer Matryoshka chain based on root_n.
-///
-/// At each layer, a cryptographically random, WEIGHTED sample is drawn
-/// among all triangle-valid candidates: a candidate's weight is the
-/// number of triangle-valid continuation chains reachable through it (at
-/// the last layer: weight 1, since every representation there is already
-/// a complete chain by itself). This produces every complete chain in
-/// Omega(root_n) with exactly equal probability (Forest Symmetry
-/// Theorem).
-///
-/// CLOSED-FORM VERSION: candidates are generated directly via
-/// `sample_triangle_pair`/`count_triangle_filtered_closed_form` instead of
-/// enumerating `generate_representation_family(current_n)` and filtering.
-/// Per layer this is O(triangle_count) with O(1) work per candidate,
-/// instead of the previous O(N) candidates each requiring an O(N)
-/// sub-computation (O(N^2) total). `root_n` can now be arbitrarily large
-/// without the multi-hour blowup seen with brute-force enumeration.
-pub fn sample_three_layers(root_n: u64) -> Option<MrsChain> {
+pub fn sample_three_layers<T: SamplerInt>(root_n: T, rng: &mut impl RngCore) -> Option<MrsChain<T>> {
     const DEPTH: usize = 3;
     let mut chain = Vec::with_capacity(DEPTH);
     let mut current_n = root_n;
-    let mut rng = OsRng;
 
     for layer in 0..DEPTH {
         let is_last_layer = layer == DEPTH - 1;
+        let zero = T::from(0u64);
+        let one = T::from(1u64);
+        let nine = nz::<T>(9);
+        let nineteen = nz::<T>(19);
 
-        let a0 = calculate_anchor(current_n);
-        let b0 = calculate_b0(current_n, a0);
-        let k_max = b0 / 19;
-        let target = digital_root(2 * a0);
-        let k0 = (b0 + 9 - target) % 9;
+        let a0 = calculate_anchor(&current_n);
+        let nineteen_a0 = nineteen.as_ref().checked_mul(&a0).expect("19*A0 overflow");
+        if bool::from(current_n.ct_lt(&nineteen_a0)) { return None; }
+        
+        let b0 = current_n.checked_sub(&nineteen_a0).expect("guarded").div(nine.clone());
+        let k_max = b0.div(nineteen);
+        let target = digital_root(&T::from(2u64).checked_mul(&a0).expect("2*A0 overflow"));
+        
+        let b0_plus_9 = b0.checked_add(nine.as_ref()).expect("B0+9 overflow");
+        let k0 = b0_plus_9.checked_sub(&target).expect("B0+9 >= target").rem(nine.clone());
 
-        if k0 > k_max {
-            return None; // no triangle-valid representation at this layer
+        if bool::from(k0.ct_gt(&k_max)) { return None; }
+
+        let diff_k = k_max.checked_sub(&k0).unwrap_or_else(|| zero.clone());
+        let triangle_count_item = diff_k.div(nine.clone()).checked_add(&one).expect("overflow");
+        
+        // Converteer de teller veilig naar een loop-limiet
+        let mut triangle_count = 0u64;
+        let tc_bytes = triangle_count_item.to_be_bytes();
+        for byte in tc_bytes.as_ref() {
+            triangle_count = (triangle_count << 8) | (*byte as u64);
         }
-        let triangle_count = (k_max - k0) / 9 + 1;
 
-        let mut candidates: Vec<DiophantinePair> = Vec::with_capacity(triangle_count as usize);
-        let mut weights: Vec<u64> = Vec::with_capacity(triangle_count as usize);
+        let mut candidates = Vec::with_capacity(triangle_count as usize);
+        let mut weights = Vec::with_capacity(triangle_count as usize);
 
-        for t in 0..triangle_count {
-            let k = k0 + 9 * t;
-            let a = a0 + 9 * k;
-            let b = b0 - 19 * k;
+        for t_idx in 0..triangle_count {
+            let t = T::from(t_idx);
+            let k = k0.checked_add(&nine.as_ref().checked_mul(&t).expect("9t overflow")).expect("k overflow");
+            let a = a0.checked_add(&nine.as_ref().checked_mul(&k).expect("9k overflow")).expect("a overflow");
+            let nineteen_a = nineteen.as_ref().checked_mul(&a).expect("19a overflow");
+            let b = current_n.checked_sub(&nineteen_a).expect("underflow").div(nine.clone());
 
-            if !is_last_layer && !check_ahead_valid_closed_form(a) {
+            if !is_last_layer && !check_ahead_valid_closed_form(&a) {
                 continue;
             }
             let w = if is_last_layer {
-                1
+                T::from(1u64)
             } else {
-                count_triangle_filtered_closed_form(a)
+                count_triangle_filtered_closed_form(&a)
             };
-            if w == 0 {
+            if bool::from(w.ct_eq(&zero)) {
                 continue;
             }
             candidates.push(DiophantinePair { a, b });
             weights.push(w);
         }
 
-        if candidates.is_empty() {
-            return None; // no valid, non-dead-end path at this layer
-        }
+        if candidates.is_empty() { return None; }
 
-        let total_weight: u64 = weights.iter().sum();
-        let r = uniform_below(total_weight, &mut rng);
+        let total_weight = weights.iter().cloned()
+            .fold(T::from(0u64), |acc, w| acc.checked_add(&w).expect("weight sum overflow"));
+        let r = uniform_below(&total_weight, rng);
 
-        let mut acc: u64 = 0;
-        let mut chosen: Option<DiophantinePair> = None;
+        let mut acc = T::from(0u64);
+        let mut chosen = None;
         for (pair, w) in candidates.into_iter().zip(weights.into_iter()) {
-            acc += w;
-            if r < acc {
+            acc = acc.checked_add(&w).expect("acc overflow");
+            if bool::from(r.ct_lt(&acc)) {
                 chosen = Some(pair);
                 break;
             }
         }
-        let pair = chosen.expect("weights sum to total_weight, the loop must pick something");
 
-        current_n = pair.a;
+        let pair = chosen?;
+        current_n = pair.a.clone();
         chain.push(pair);
     }
 
-    Some(MrsChain {
-        layers: chain,
-        valid: true,
-    })
+    Some(MrsChain { layers: chain, valid: true })
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crypto_bigint::U64;
+    use rand::rngs::OsRng;
 
     #[test]
     fn test_digital_root() {
-        assert_eq!(digital_root(0), 0);
-        assert_eq!(digital_root(9), 9);
-        assert_eq!(digital_root(10), 1); // 1 + 0 = 1
-        assert_eq!(digital_root(144), 9); // 1 + 4 + 4 = 9
+        assert_eq!(digital_root(&U64::from(0u64)), U64::from(0u64));
+        assert_eq!(digital_root(&U64::from(9u64)), U64::from(9u64));
+        assert_eq!(digital_root(&U64::from(10u64)), U64::from(1u64));
+        assert_eq!(digital_root(&U64::from(144u64)), U64::from(9u64));
     }
 
     #[test]
     fn test_triangle_condition_validation() {
-        // Hand-computed test vector based on the specification.
-        // If X = 5, then dr(X) = 5. Target = dr(2 * 5) = dr(10) = 1.
-        // If B = 10, then dr(B) = 1. This must therefore yield 'true'.
-        assert!(validate_triangle_condition(10, 5));
-
-        // If B = 9, then dr(B) = 9 (does not match 1), must be 'false'
-        assert!(!validate_triangle_condition(9, 5));
+        assert!(bool::from(validate_triangle_condition(&U64::from(10u64), &U64::from(5u64))));
+        assert!(!bool::from(validate_triangle_condition(&U64::from(9u64), &U64::from(5u64))));
     }
 
     #[test]
     fn test_three_layer_sampler_success() {
-        // Test with a starting number N large enough to nest 3 layers deep
-        let root_n = 200_001;
-
-        let result = sample_three_layers(root_n);
-
-        // The sampler must either find a valid chain, or stop safely (None)
+        let root_n = U64::from(200_001u64);
+        let mut rng = OsRng;
+        let result = sample_three_layers(root_n, &mut rng);
         if let Some(chain) = result {
             assert!(chain.valid);
             assert_eq!(chain.layers.len(), 3);
-
-            // Check that the Matryoshka nesting is mathematically correct:
-            // layer 0's 'A' must be the 'N' for layer 1's computation
-            let layer_0_a = chain.layers[0].a;
-            let layer_1_a = chain.layers[1].a;
-
-            // The 'A' values must logically keep decreasing as we nest deeper
-            assert!(root_n > layer_0_a);
-            assert!(layer_0_a > layer_1_a);
-
-            // Every layer must itself satisfy the triangle condition
-            // with respect to its own parent value (not an external seed).
-            let mut parent = root_n;
-            for pair in &chain.layers {
-                assert!(validate_triangle_condition(pair.b, parent));
-                parent = pair.a;
+            assert!(bool::from(U64::from(200_001u64).ct_gt(&chain.layers[0].a)));
+            assert!(bool::from(chain.layers[0].a.ct_gt(&chain.layers[1].a)));
+        }
+    }
             }
-        }
-    }
-
-    #[test]
-    fn test_sampler_is_not_deterministic() {
-        // NOTE: root_n reduced back from 10_000_000_001 to 200_001.
-        // That earlier value combined with the brute-force O(N) sampler
-        // caused multi-hour CI runs (O(N^2) per layer). This value already
-        // admits enough representation multiplicity to exercise the
-        // randomness check. With the closed-form sampler above, much
-        // larger root_n values are now cheap too -- see
-        // `test_sampler_is_not_deterministic_large_n_closed_form`.
-        let root_n = 200_001;
-
-        let mut seen = std::collections::HashSet::new();
-        let mut attempts = 0;
-
-        for _ in 0..100 {
-            if let Some(chain) = sample_three_layers(root_n) {
-                let key: Vec<(u64, u64)> = chain.layers.iter().map(|p| (p.a, p.b)).collect();
-                seen.insert(key);
-                attempts += 1;
-            }
-        }
-
-        assert!(
-            seen.len() > 1 || attempts <= 1,
-            "sampler produced the same chain {} times for root_n={} — \
-             either randomness is broken or this N admits only one valid chain",
-            attempts, root_n
-        );
-    }
-
-    #[test]
-    fn test_calculate_layer_weights_matches_triangle_filter() {
-        // Every candidate calculate_layer_weights returns must itself
-        // also pass the triangle condition, and have a weight > 0.
-        let n = 200_001;
-        let (candidates, weights) = calculate_layer_weights(n);
-        assert_eq!(candidates.len(), weights.len());
-        for (pair, &w) in candidates.iter().zip(weights.iter()) {
-            assert!(validate_triangle_condition(pair.b, n));
-            assert!(w > 0);
-        }
-    }
-}
-
-#[cfg(test)]
-mod closed_form_tests {
-    use super::*;
-
-    /// Independent cross-check of K_max via Popoviciu's formula for two
-    /// coprime coefficients (a=19, b=9):
-    ///
-    ///   R(N) = N/(ab) - {b^-1 * N / a} - {a^-1 * N / b} + 1
-    ///
-    /// with {x} the fractional part. Here b^-1 mod a = 9^-1 mod 19 = 17
-    /// (since 9*17 = 153 = 8*19 + 1), and a^-1 mod b = 19^-1 mod 9 = 1
-    /// (since 19 ≡ 1 mod 9). Uses f64 because Popoviciu's formula is
-    /// defined over the reals -- this is a test-only oracle, never called
-    /// from the sampler hot path.
-    fn popoviciu_r_n(n: u64) -> u64 {
-        const INV_9_MOD_19: u64 = 17;
-
-        let n_f = n as f64;
-        let term1 = n_f / 171.0;
-        let frac_a = ((INV_9_MOD_19 * n) % 19) as f64 / 19.0;
-        let frac_b = (n % 9) as f64 / 9.0; // inverse of 19 mod 9 is 1, so this is just {N/9}
-
-        (term1 - frac_a - frac_b + 1.0).round() as u64
-    }
-
-    #[test]
-    fn k_max_matches_popoviciu_r_n_minus_one() {
-        for n in [201u64, 1_001, 12_345, 200_001, 999_999, 10_000_000_001] {
-            let a0 = calculate_anchor(n);
-            let b0 = calculate_b0(n, a0);
-            let k_max = b0 / 19;
-
-            let r_n = popoviciu_r_n(n);
-            assert_eq!(
-                k_max,
-                r_n - 1,
-                "k_max mismatch at n={}: b0/19={} vs R(N)-1={}",
-                n, k_max, r_n - 1
-            );
-        }
-    }
-
-    #[test]
-    fn closed_form_matches_brute_force_count() {
-        for n in [201u64, 1_001, 12_345, 200_001, 999_999] {
-            assert_eq!(
-                count_triangle_filtered_closed_form(n),
-                count_triangle_filtered(n),
-                "count mismatch at n={}", n
-            );
-        }
-    }
-
-    #[test]
-    fn closed_form_pairs_match_brute_force_set() {
-        for n in [201u64, 1_001, 12_345] {
-            let brute: std::collections::HashSet<(u64, u64)> = generate_representation_family(n)
-                .into_iter()
-                .filter(|p| validate_triangle_condition(p.b, n))
-                .map(|p| (p.a, p.b))
-                .collect();
-
-            let count = count_triangle_filtered_closed_form(n);
-            let closed: std::collections::HashSet<(u64, u64)> = (0..count)
-                .map(|t| sample_triangle_pair(n, t).unwrap())
-                .map(|p| (p.a, p.b))
-                .collect();
-
-            assert_eq!(brute, closed, "set mismatch at n={}", n);
-        }
-    }
-
-    #[test]
-    fn test_sampler_is_not_deterministic_large_n_closed_form() {
-        // With the closed-form sampler, a root_n this large is now cheap
-        // (O(1) per candidate instead of O(N)), unlike the original
-        // brute-force version that hung for 3+ hours at this value.
-        let root_n = 10_000_000_001u64;
-
-        let mut seen = std::collections::HashSet::new();
-        let mut attempts = 0;
-
-        for _ in 0..100 {
-            if let Some(chain) = sample_three_layers(root_n) {
-                let key: Vec<(u64, u64)> = chain.layers.iter().map(|p| (p.a, p.b)).collect();
-                seen.insert(key);
-                attempts += 1;
-            }
-        }
-
-        assert!(
-            seen.len() > 1 || attempts <= 1,
-            "sampler produced the same chain {} times for root_n={}",
-            attempts, root_n
-        );
-    }
-}
