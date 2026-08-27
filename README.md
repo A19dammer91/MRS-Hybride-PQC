@@ -1,11 +1,14 @@
 # MRS-AUTH
 ### Post-Quantum Coercion-Resistant Authentication Framework
 
-[![License](https://shields.io)](LICENSE)
-[![Tests](https://github.com)](https://github.com)
-[![Benchmark](https://github.com/workflows/benchmark.yml/badge.svg)](https://github.com)
-[![Rust 1.70+](https://shields.io)](https://rust-lang.org)
-[![EasyCrypt Verified](https://shields.io)](proofs/)
+<p align="left">
+  <img src="https://shields.io" alt="License">
+  <img src="https://github.com" alt="Tests">
+  <img src="https://github.com" alt="Benchmark">
+  <img src="https://shields.io" alt="Rust Version">
+  <img src="https://shields.io" alt="EasyCrypt Verified">
+</p>
+
 
 > **MRS-AUTH** is a hybrid post-quantum cryptographic library combining **Kyber-1024 KEM** (NIST Level 5, IND-CCA2), **MRS(19,9) Diophantine chain sampling**, and **AES-256-GCM authenticated encryption**. 
 >
