@@ -62,6 +62,7 @@ fn uniform_below(bound: u64, rng: &mut impl RngCore) -> u64 {
         let r = rng.next_u64();
         if r < limit { return r % bound; }
     }
+}
 // ============================================================================
 // Core Sampler Engine & Optional BigInt Bridge
 // ============================================================================
@@ -199,4 +200,3 @@ mod tests {
         }
     }
 }
-    
