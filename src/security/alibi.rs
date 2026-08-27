@@ -14,26 +14,99 @@ pub struct AlibiEvidence {
     pub merkle_proof: MerkleProof,
 }
 
+/// Solves a square linear system A·x = b over the prime field Z_q using
+/// Gauss-Jordan elimination. Returns None if A is singular mod q.
+fn solve_linear_mod_q(a: &[Vec<u64>], b: &[u64], q: u64) -> Option<Vec<u64>> {
+    let n = b.len();
+    let mut aug: Vec<Vec<u64>> = a.iter().enumerate().map(|(i, row)| {
+        let mut r = row.clone();
+        r.push(b[i]);
+        r
+    }).collect();
+
+    for col in 0..n {
+        // Find pivot row
+        let mut pivot = None;
+        for row in col..n {
+            if aug[row][col] % q != 0 {
+                pivot = Some(row);
+                break;
+            }
+        }
+        let pivot = pivot?;
+
+        // Swap pivot row into position
+        aug.swap(col, pivot);
+
+        // Normalize pivot row: divide entire row by pivot element
+        let inv = mod_inverse(aug[col][col], q)?;
+        for j in col..=n {
+            aug[col][j] = ((aug[col][j] as u128 * inv as u128) % q as u128) as u64;
+        }
+
+        // Eliminate this column from all other rows
+        for row in 0..n {
+            if row != col && aug[row][col] != 0 {
+                let factor = aug[row][col];
+                for j in col..=n {
+                    let subtrahend = (factor as u128 * aug[col][j] as u128) % q as u128;
+                    aug[row][j] = ((aug[row][j] as u128 + q as u128 - subtrahend) % q as u128) as u64;
+                }
+            }
+        }
+    }
+
+    Some(aug.iter().map(|row| row[n]).collect())
+}
+
+/// Extended Euclidean Algorithm: modular multiplicative inverse of a mod m.
+/// Returns None if a and m are not coprime.
+fn mod_inverse(a: u64, m: u64) -> Option<u64> {
+    let (mut t, mut new_t) = (0i128, 1i128);
+    let (mut r, mut new_r) = (m as i128, (a % m) as i128);
+    while new_r != 0 {
+        let quotient = r / new_r;
+        (t, new_t) = (new_t, t - quotient * new_t);
+        (r, new_r) = (new_r, r - quotient * new_r);
+    }
+    if r > 1 {
+        return None; // Not invertible
+    }
+    let result = if t < 0 { t + m as i128 } else { t } as u64;
+    Some(result % m)
+}
+
 /// Computes a forged secret vector `s` that satisfies the public LWE
-/// instance `b = A*s + e` for an alternative alibi chain under the noise bounds.
+/// instance `b = A·s + e` for an alternative alibi chain under the noise bounds.
+///
+/// Strategy: pick a small dummy noise vector `e` (all ones), then solve
+/// A·s = b − e (mod q) exactly via Gauss-Jordan elimination. If A is
+/// invertible mod q, the resulting `s` will pass `verify_lwe_match`.
 pub fn forge_lwe_secret(
     instance: &LweInstance,
     _alibi_chain: &MrsChain,
     _allowed_noise_bound: u64,
     modulus_q: u64,
 ) -> Vec<u64> {
-    // 1. Choose a nominal, safe dummy noise vector `e` well within the allowed bound
-    let forged_e = vec![1u64; instance.b.len()];
+    let n = instance.b.len();
 
-    // 2. Solve the linear congruence system: public_matrix_a * s_forged = (b - e) mod q
-    let n = instance.public_matrix_a.len();
-    let mut forged_s = vec![0u64; n];
+    // Target: b − e with e = [1, 1, ..., 1] (well inside any reasonable bound)
+    let target: Vec<u64> = instance.b.iter()
+        .map(|&bi| (bi + modulus_q - 1) % modulus_q)
+        .collect();
 
-    for i in 0..n {
-        let b_minus_e = (instance.b[i] + modulus_q - forged_e[i]) % modulus_q;
-        forged_s[i] = (b_minus_e * 2) % modulus_q;
+    // Attempt exact solve A·s = target (mod q)
+    if let Some(solution) = solve_linear_mod_q(&instance.public_matrix_a, &target, modulus_q) {
+        return solution;
     }
 
+    // Fallback if matrix is singular: seed from alibi chain a-values
+    let mut forged_s = vec![0u64; n];
+    for (i, pair) in _alibi_chain.layers.iter().enumerate() {
+        if i < n {
+            forged_s[i] = pair.a % modulus_q;
+        }
+    }
     forged_s
 }
 
