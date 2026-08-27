@@ -1,10 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use crypto_bigint::{U64, U256};
 use mrs_auth_pqc::sampler::sample_three_layers;
-use rand::rngs::OsRng;
 
-fn bench_sampler_u64(c: &mut Criterion) {
-    let mut group = c.benchmark_group("sample_three_layers_u64");
+fn bench_sampler(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sample_three_layers");
     let scales: [(&str, u64); 4] = [
         ("small_1e6", 1_000_003),
         ("moderate_1e9", 1_000_000_003),
@@ -12,32 +10,12 @@ fn bench_sampler_u64(c: &mut Criterion) {
         ("max_u64_range_1e18", 1_000_000_000_000_000_003),
     ];
     for (label, n) in scales {
-        let root = U64::from(n);
-        group.bench_with_input(BenchmarkId::from_parameter(label), &root, |b, root| {
-            let mut rng = OsRng;
-            b.iter(|| black_box(sample_three_layers(black_box(root), &mut rng)));
+        group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, root| {
+            b.iter(|| black_box(sample_three_layers(black_box(*root))));
         });
     }
     group.finish();
 }
 
-fn bench_sampler_u256(c: &mut Criterion) {
-    let mut group = c.benchmark_group("sample_three_layers_u256");
-    // Cryptographic-scale N ~ 10^42 (well beyond u64)
-    let scales: [(&str, &str); 3] = [
-        ("crypto_10p36", "0000000000000000000000000000000000000000000000000000E8D4A51000"),
-        ("crypto_10p42", "000000000000000000000000000000000000000000000000000000E8D4A51000"),
-        ("crypto_10p48", "00000000000000000000000000000000000000000000000000000000E8D4A51000"),
-    ];
-    for (label, hex) in scales {
-        let root = U256::from_be_hex(hex);
-        group.bench_with_input(BenchmarkId::from_parameter(label), &root, |b, root| {
-            let mut rng = OsRng;
-            b.iter(|| black_box(sample_three_layers(black_box(root), &mut rng)));
-        });
-    }
-    group.finish();
-}
-
-criterion_group!(benches, bench_sampler_u64, bench_sampler_u256);
+criterion_group!(benches, bench_sampler);
 criterion_main!(benches);
