@@ -1,7 +1,7 @@
 use sha2::{Sha256, Digest};
 use subtle::{ConstantTimeEq, Choice};
 use zeroize::Zeroize;
-use crate::sampler::{MrsChain, SamplerInt};
+use crate::sampler::MrsChain;
 
 /// Merkle inclusion proof for a selected alibi chain.
 #[derive(Debug, Clone, Zeroize)]
@@ -16,11 +16,11 @@ pub struct MerkleProof {
 ///
 /// Each layer contributes its A and B bytes, SHA256-ed sequentially.
 /// This produces a deterministic hash suitable for Merkle commitment.
-pub fn hash_mrs_chain<T: SamplerInt>(chain: &MrsChain<T>) -> [u8; 32] {
+pub fn hash_mrs_chain(chain: &MrsChain) -> [u8; 32] {
     let mut hasher = Sha256::new();
     for pair in &chain.layers {
-        hasher.update(&pair.a.to_be_bytes_vec());
-        hasher.update(&pair.b.to_be_bytes_vec());
+        hasher.update(&pair.a.to_be_bytes());
+        hasher.update(&pair.b.to_be_bytes());
     }
     let mut out = [0u8; 32];
     out.copy_from_slice(&hasher.finalize());
@@ -84,17 +84,16 @@ pub fn verify_k_acceptance_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crypto_bigint::U64;
     use crate::core::diophantine::DiophantinePair;
 
     #[test]
     fn hash_chain_deterministic() {
         let chain = MrsChain {
             layers: vec![
-                DiophantinePair { a: U64::from(19u64), b: U64::from(9u64) },
-                DiophantinePair { a: U64::from(5u64), b: U64::from(3u64) },
+                DiophantinePair { a: 19u64, b: 9u64 },
+                DiophantinePair { a: 5u64, b: 3u64 },
             ],
-            valid: subtle::Choice::from(1u8),
+            valid: true,
         };
         let h1 = hash_mrs_chain(&chain);
         let h2 = hash_mrs_chain(&chain);
