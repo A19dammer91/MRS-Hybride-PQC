@@ -5,8 +5,8 @@ edition     = "2021"
 authors     = ["Bilal El Issaoui"]
 description = "Research-grade hybrid post-quantum KEM with Diophantine deniability. Not audited for production use."
 license     = "Apache-2.0"
-repository  = "https://github.com/A19dammer91/MRS-Hybride-PQC"
-documentation = "https://docs.rs/mrs_auth_pqc"
+repository  = "https://github.com"
+documentation = "https://docs.rs"
 readme      = "README.md"
 keywords    = ["cryptography", "post-quantum", "kyber", "deniability", "diophantine"]
 categories  = ["cryptography"]
@@ -33,6 +33,13 @@ aes-gcm = "0.10"
 
 # CSPRNG sampling in the MRS chain sampler
 rand = "0.8"
+
+# MAAK CRYPTO-BIGINT OPTIONEEL (Voor schaling naar N ~ 10^42 in de toekomst)
+crypto-bigint = { version = "0.6", features = ["hybrid-array"], optional = true }
+
+[features]
+default = []
+bigint = ["dep:crypto-bigint"]
 
 [dev-dependencies]
 criterion = "0.5"
