@@ -575,4 +575,55 @@ mod tests {
                     seen_plain.insert(chain.layers.iter().map(|p| (p.a, p.b)).collect::<Vec<_>>());
                 }
                 if let Some(chain) = sample_three_layers_ct(root_n, &mut rng) {
- 
+                    seen_ct.insert(chain.layers.iter().map(|p| (p.a, p.b)).collect::<Vec<_>>());
+                }
+            }
+
+            // Every chain produced by the CT sampler must be reachable by the plain sampler.
+            for chain in &seen_ct {
+                assert!(
+                    seen_plain.contains(chain),
+                    "CT sampler produced an unreachable chain {:?} for root_n={}",
+                    chain, root_n
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ct_sampler_is_not_deterministic() {
+        let root_n = 10_000_000_001u64;
+        let mut rng = OsRng;
+        let mut seen = std::collections::HashSet::new();
+        let mut attempts = 0;
+
+        for _ in 0..100 {
+            if let Some(chain) = sample_three_layers_ct(root_n, &mut rng) {
+                seen.insert(chain.layers.iter().map(|p| (p.a, p.b)).collect::<Vec<_>>());
+                attempts += 1;
+            }
+        }
+
+        assert!(
+            seen.len() > 1 || attempts <= 1,
+            "sampler produced the same chain {} times for root_n={}",
+            attempts, root_n
+        );
+    }
+
+    #[test]
+    fn handles_tiny_n_without_panicking() {
+        let mut rng = OsRng;
+        for root_n in [0u64, 1, 5, 8, 9, 10, 15, 18, 170, 171, 200] {
+            let _ = sample_three_layers_ct(root_n, &mut rng);
+        }
+    }
+
+    #[test]
+    fn handles_very_large_n() {
+        let root_n = u64::MAX / 2;
+        let mut rng = OsRng;
+        let result = sample_three_layers_ct(root_n, &mut rng);
+        let _ = result;
+    }
+}
