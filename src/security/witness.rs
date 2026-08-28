@@ -12,10 +12,10 @@
 //!   authentic witness is negligible in the security parameter.
 
 use crate::core::diophantine::DiophantinePair;
-use crate::sampler::{sample_three_layers_ct, MrsChain};
+use crate::sampler::cdf_sampler::{sample_three_layers_ct, MrsChain};
 use rand::RngCore;
 use sha2::{Sha256, Digest};
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
+use subtle::{Choice, ConstantTimeEq};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 use hmac::{Hmac, Mac};
 
@@ -478,4 +478,4 @@ mod tests {
             auth_mean, alibi_mean
         );
     }
-    }
+}
