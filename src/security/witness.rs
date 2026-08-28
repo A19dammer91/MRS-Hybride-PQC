@@ -229,20 +229,15 @@ impl WitnessSpace {
 
 /// Verify the cryptographic binding of a witness to an identity.
 /// This REQUIRES the master_secret and is run by the legitimate verifier.
+/// 
+/// Note: The caller should first run `space.verify_membership(witness)` 
+/// to confirm mathematical validity before checking authenticity.
 pub fn verify_witness_authenticity(
     master_secret: &MasterSecret,
     witness: &Witness,
     identity: &[u8],
 ) -> WitnessStatus {
-    // First: is it mathematically valid?
-    let space = WitnessSpace::new(witness.chain.layers.first().map_or(0, |p| {
-        // Reconstruct root: N = 19*a0 + 9*b0 of first layer... 
-        // Actually we need the original root. In practice the verifier
-        // knows the session params including root_n.
-        0 // Placeholder — see note below
-    });
-
-    // Compute expected binding tag
+    // Compute expected binding tag: HMAC(master_secret, identity || session || chain_hash)
     let chain_hash = hash_chain(&witness.chain);
     let expected_tag = MasterSecret::compute_binding_tag(
         &master_secret.key,
@@ -251,7 +246,7 @@ pub fn verify_witness_authenticity(
         &chain_hash,
     );
 
-    // Constant-time comparison
+    // Constant-time comparison of binding tags
     let tags_match = subtle::constant_time_eq(&expected_tag, &witness.binding_tag);
 
     if tags_match.unwrap_u8() == 1 {
@@ -538,5 +533,3 @@ mod tests {
         assert!(diff_pct < 0.05,
             "Authentic and alibi witnesses are statistically distinguishable: {} vs {}",
             auth_mean, alibi_mean);
-    }
-}
