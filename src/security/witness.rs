@@ -11,7 +11,6 @@
 //!   indistinguishable. The adversary's advantage in detecting the
 //!   authentic witness is negligible in the security parameter.
 
-use crate::core::diophantine::DiophantinePair;
 use crate::sampler::cdf_sampler::{sample_three_layers_ct, MrsChain};
 use rand::RngCore;
 use sha2::{Sha256, Digest};
@@ -206,7 +205,8 @@ pub fn verify_witness_authenticity(
         &chain_hash,
     );
 
-    let tags_match = subtle::constant_time_eq(&expected_tag, &witness.binding_tag);
+    // FIXED: use ct_eq method instead of non-existent subtle::constant_time_eq
+    let tags_match = expected_tag.ct_eq(&witness.binding_tag);
 
     if tags_match.unwrap_u8() == 1 {
         WitnessStatus::Authentic
@@ -478,4 +478,4 @@ mod tests {
             auth_mean, alibi_mean
         );
     }
-}
+        }
