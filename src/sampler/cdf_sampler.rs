@@ -1,5 +1,5 @@
 //! Weighted CDF sampler with O(log n) floor-sum + binary search
-//! for the MRS(19,9) Diophantine forest.
+//! for the MRS(19,9) Diophantine witness space.
 //!
 //! CONSTANT-TIME IMPLEMENTATION: all operations on secret-dependent data
 //! (chain contents, layer parameters, sampled indices) are constant-time.
@@ -24,7 +24,7 @@ use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess};
 use zeroize::Zeroize;
 
-/// A complete 3-layer Matryoshka chain.
+/// A complete 3-layer witness chain.
 #[derive(Debug, Clone, Zeroize)]
 #[zeroize(drop)]
 pub struct MrsChain {
@@ -243,7 +243,7 @@ fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
 // Constant-Time Layer Parameters
 // ============================================================================
 
-/// Parameters for one layer of the Matryoshka chain.
+/// Parameters for one layer of the witness chain.
 struct LayerParams {
     a0: u64,
     b0: u64,
@@ -358,7 +358,7 @@ where
 // Public Constant-Time Sampler
 // ============================================================================
 
-/// Samples a 3-layer Matryoshka chain in constant time.
+/// Samples a 3-layer witness chain in constant time.
 ///
 /// # Properties
 /// - No branch depends on secret data (only on the public loop index).
@@ -575,3 +575,4 @@ mod tests {
                     seen_plain.insert(chain.layers.iter().map(|p| (p.a, p.b)).collect::<Vec<_>>());
                 }
                 if let Some(chain) = sample_three_layers_ct(root_n, &mut rng) {
+ 
