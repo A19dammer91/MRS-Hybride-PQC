@@ -7,4 +7,11 @@ pub use timecode::{
     EufCmaAdversary, ForwardSecrecyAdversary,
 };
 
-pub use mer
+pub use merkle::{
+    build_k_acceptance_root, verify_k_acceptance_proof, MerkleProof,
+};
+
+pub use witness::{
+    MasterSecret, Witness, WitnessSpace, WitnessStatus,
+    verify_witness_authenticity, hash_chain,
+};
