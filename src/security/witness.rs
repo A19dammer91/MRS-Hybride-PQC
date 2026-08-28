@@ -1,4 +1,4 @@
-witness_rs = r'''//! Witness Authentication & Coercion-Resistance Engine
+//! Witness Authentication & Coercion-Resistance Engine
 //!
 //! Core design principle:
 //!   The MRS Diophantine space W_N contains many valid witnesses.
@@ -478,24 +478,4 @@ mod tests {
             auth_mean, alibi_mean
         );
     }
-}
-'''
-
-# Verify brace balance
-open_count = witness_rs.count('{')
-close_count = witness_rs.count('}')
-print(f"Open braces: {open_count}")
-print(f"Close braces: {close_count}")
-print(f"Balanced: {open_count == close_count}")
-
-# Check for the typo
-if 'n    Invalid' in witness_rs:
-    print("ERROR: Typo still present!")
-else:
-    print("OK: No typo found")
-
-with open('/mnt/agents/output/witness.rs', 'w') as f:
-    f.write(witness_rs)
-
-print(f"\nwitness.rs saved successfully")
-print(f"File size: {len(witness_rs)} bytes")
+    }
