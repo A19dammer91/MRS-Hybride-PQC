@@ -64,7 +64,7 @@ pub enum WitnessStatus {
     /// Witness is mathematically valid AND correctly bound to the claimed identity.
     Authentic,
     /// Witness is mathematically INVALID (fails N = 19A + 9B checks).
-    Invalid,
+n    Invalid,
     /// Witness is mathematically valid but binding tag does NOT match.
     BindingMismatch,
 }
@@ -81,26 +81,15 @@ impl MasterSecret {
 
     /// Deterministically derive the "intended" witness for a given identity
     /// and session. This witness is the ONE that authenticates the identity.
-    ///
-    /// The derivation uses HKDF-Expand to get a 64-bit seed, then uses the
-    /// CSPRNG-based sampler to draw a witness. Because the seed is fixed
-    /// per (identity, session), the authentic witness is reproducible.
     pub fn generate_authentic_witness(
         &self,
         space: &WitnessSpace,
         identity: &[u8],
         session_id: &[u8],
     ) -> Option<Witness> {
-        // 1. Derive deterministic seed from master_secret + identity + session
         let seed = Self::derive_seed(&self.key, identity, session_id);
-
-        // 2. Use seed to initialize a ChaCha20-based CSPRNG for deterministic sampling
         let mut rng = DeterministicRng::from_seed(seed);
-
-        // 3. Sample the authentic witness from W_N
         let chain = sample_three_layers_ct(space.root_n, &mut rng)?;
-
-        // 4. Compute cryptographic binding tag
         let chain_hash = hash_chain(&chain);
         let binding_tag = Self::compute_binding_tag(&self.key, identity, session_id, &chain_hash);
 
@@ -113,26 +102,19 @@ impl MasterSecret {
 
     /// Under coercion: generate an alternative witness w' ∈ W_N that is
     /// mathematically valid but NOT bound to the identity.
-    ///
-    /// The user hands this to the coercer. Because w' is a random element
-    /// of W_N, the coercer cannot distinguish it from the authentic witness
-    /// without the master_secret.
     pub fn generate_alternative_witness(
         &self,
         space: &WitnessSpace,
         authentic: &Witness,
         rng: &mut impl RngCore,
     ) -> Option<Witness> {
-        // Rejection-sample until we get a witness different from the authentic one.
-        // With |W_N| >> 1, this succeeds in O(1) iterations.
         for _ in 0..256 {
             if let Some(chain) = sample_three_layers_ct(space.root_n, rng) {
-                // Constant-time comparison to avoid leaking which is authentic
                 let same = chains_equal_ct(&chain, &authentic.chain);
                 if same.unwrap_u8() == 0 {
                     return Some(Witness {
                         chain,
-                        binding_tag: [0u8; 32], // NO binding — this is the alibi
+                        binding_tag: [0u8; 32],
                         session_id: authentic.session_id.clone(),
                     });
                 }
@@ -185,15 +167,9 @@ impl WitnessSpace {
 
     /// Verify whether a witness is a mathematically valid member of W_N.
     /// This is a PUBLIC operation — anyone can run it.
-    ///
-    /// Checks:
-    ///   1. Chain has correct depth.
-    ///   2. Each layer satisfies N = 19A + 9B.
-    ///   3. Recursive nesting: N_{i+1} = A_i.
     pub fn verify_membership(&self, witness: &Witness) -> WitnessStatus {
         let chain = &witness.chain;
 
-        // Check depth
         if chain.layers.len() != self.depth {
             return WitnessStatus::Invalid;
         }
@@ -201,43 +177,27 @@ impl WitnessSpace {
         let mut current_n = self.root_n;
 
         for pair in &chain.layers {
-            // Check N = 19A + 9B
             let lhs = 19u64.wrapping_mul(pair.a).wrapping_add(9u64.wrapping_mul(pair.b));
             if lhs != current_n {
                 return WitnessStatus::Invalid;
             }
-            // Check non-negative coefficients
             if pair.a == 0 && pair.b == 0 && current_n > 0 {
                 return WitnessStatus::Invalid;
             }
-            // Move to next layer
             current_n = pair.a;
         }
 
-        // Check if witness claims to be bound (non-zero binding_tag)
-        let is_bound = !witness.binding_tag.iter().all(|&b| b == 0);
-        if is_bound {
-            // We cannot verify binding without master_secret — but we can
-            // report that it *claims* binding. The actual binding verification
-            // requires the master_secret holder.
-            WitnessStatus::ValidButUnbound // Caller must do binding check separately
-        } else {
-            WitnessStatus::ValidButUnbound
-        }
+        WitnessStatus::ValidButUnbound
     }
 }
 
 /// Verify the cryptographic binding of a witness to an identity.
 /// This REQUIRES the master_secret and is run by the legitimate verifier.
-/// 
-/// Note: The caller should first run `space.verify_membership(witness)` 
-/// to confirm mathematical validity before checking authenticity.
 pub fn verify_witness_authenticity(
     master_secret: &MasterSecret,
     witness: &Witness,
     identity: &[u8],
 ) -> WitnessStatus {
-    // Compute expected binding tag: HMAC(master_secret, identity || session || chain_hash)
     let chain_hash = hash_chain(&witness.chain);
     let expected_tag = MasterSecret::compute_binding_tag(
         &master_secret.key,
@@ -246,7 +206,6 @@ pub fn verify_witness_authenticity(
         &chain_hash,
     );
 
-    // Constant-time comparison of binding tags
     let tags_match = subtle::constant_time_eq(&expected_tag, &witness.binding_tag);
 
     if tags_match.unwrap_u8() == 1 {
@@ -286,12 +245,9 @@ fn chains_equal_ct(a: &MrsChain, b: &MrsChain) -> Choice {
 }
 
 // =============================================================================
-// Deterministic RNG (ChaCha20-based) for reproducible authentic witness derivation
+// Deterministic RNG for reproducible authentic witness derivation
 // =============================================================================
 
-/// A simple deterministic CSPRNG seeded from a 32-byte key.
-/// Uses ChaCha20 in a reduced-round counter mode for speed.
-/// This ensures the authentic witness is reproducible per (identity, session).
 struct DeterministicRng {
     state: [u8; 32],
     counter: u64,
@@ -305,15 +261,13 @@ impl DeterministicRng {
             state: seed,
             counter: 0,
             buffer: [0u8; 64],
-            buffer_pos: 64, // force refill on first use
+            buffer_pos: 64,
         };
         rng.refill();
         rng
     }
 
     fn refill(&mut self) {
-        // Simplified: use SHA-256 in counter mode as a practical DRBG
-        // In production, replace with a proper ChaCha20 implementation.
         for i in 0..2 {
             let mut hasher = Sha256::new();
             hasher.update(&self.state);
@@ -384,7 +338,6 @@ mod tests {
         let w1 = master.generate_authentic_witness(&space, id, session).unwrap();
         let w2 = master.generate_authentic_witness(&space, id, session).unwrap();
 
-        // Deterministic: same inputs → same witness
         assert!(chains_equal_ct(&w1.chain, &w2.chain).unwrap_u8() == 1);
         assert_eq!(w1.binding_tag, w2.binding_tag);
     }
@@ -398,7 +351,6 @@ mod tests {
         let w1 = master.generate_authentic_witness(&space, id, b"sess-1").unwrap();
         let w2 = master.generate_authentic_witness(&space, id, b"sess-2").unwrap();
 
-        // Different sessions → different witnesses
         assert!(chains_equal_ct(&w1.chain, &w2.chain).unwrap_u8() == 0);
     }
 
@@ -413,9 +365,7 @@ mod tests {
         let mut rng = OsRng;
         let alibi = master.generate_alternative_witness(&space, &authentic, &mut rng).unwrap();
 
-        // Alibi must differ from authentic
         assert!(chains_equal_ct(&authentic.chain, &alibi.chain).unwrap_u8() == 0);
-        // Alibi must have NO binding tag
         assert_eq!(alibi.binding_tag, [0u8; 32]);
     }
 
@@ -489,22 +439,15 @@ mod tests {
         let mut rng = OsRng;
         let alibi = master.generate_alternative_witness(&space, &authentic, &mut rng).unwrap();
 
-        // The coercer verifies: alibi is mathematically valid
         let status = space.verify_membership(&alibi);
         assert_eq!(status, WitnessStatus::ValidButUnbound);
 
-        // But the coercer cannot verify binding without master_secret
-        // If they try with a wrong identity, it fails:
         let binding_check = verify_witness_authenticity(&master, &alibi, id);
-        // The alibi has binding_tag = [0;32], so it will mismatch ANY expected tag
         assert_eq!(binding_check, WitnessStatus::BindingMismatch);
     }
 
     #[test]
     fn test_coercion_resistance_indistinguishability() {
-        // Statistical test: generate many authentic and alibi witnesses,
-        // verify that their chain structures are indistinguishable by
-        // simple heuristics (mean a-values, variance, etc.)
         let master = MasterSecret::from_entropy(&[42u8; 32]);
         let space = WitnessSpace::new(10_000_001, 3);
         let id = b"alice@example.com";
@@ -528,8 +471,12 @@ mod tests {
         let auth_mean = authentic_a_sums.iter().sum::<u64>() as f64 / authentic_a_sums.len() as f64;
         let alibi_mean = alibi_a_sums.iter().sum::<u64>() as f64 / alibi_a_sums.len() as f64;
 
-        // Means should be statistically close (within 5% for this test)
         let diff_pct = (auth_mean - alibi_mean).abs() / auth_mean;
-        assert!(diff_pct < 0.05,
+        assert!(
+            diff_pct < 0.05,
             "Authentic and alibi witnesses are statistically distinguishable: {} vs {}",
-            auth_mean, alibi_mean);
+            auth_mean, alibi_mean
+        );
+    }
+    }
+    
