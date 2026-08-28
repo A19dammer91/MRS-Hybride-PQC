@@ -19,7 +19,9 @@
 //! - All per-layer work is O(log n) but runs in a fixed number of
 //!   iterations regardless of input, so it takes constant time.
 
-use crate::core::diophantine::{generate_representation_family, DiophantinePair};
+use crate::core::diophantine::{
+    generate_representation_family, DiophantinePair, digital_root, validate_triangle_condition,
+};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess};
 use zeroize::Zeroize;
@@ -101,28 +103,15 @@ fn ct_select_u128(a: u128, b: u128, choice: Choice) -> u128 {
 // Core Mathematical Operations (Constant-Time)
 // ============================================================================
 
-/// Computes the digital root of a number in constant time.
-/// Returns 0 for n=0, otherwise 1..9.
-#[inline]
-pub fn digital_root(n: u64) -> u64 {
-    let is_zero = n.ct_eq(&0);
-    let dr = 1u64 + (n.wrapping_sub(1) % 9u64);
-    u64::conditional_select(&dr, &0, is_zero)
-}
-
-/// Validates the harmonic triangle condition: dr(B) == dr(2 * dr(X)).
-/// Returns a `Choice` (constant-time boolean).
-#[inline]
-pub fn validate_triangle_condition(b: u64, x: u64) -> Choice {
-    let dr_b = digital_root(b);
-    let dr_x = digital_root(x);
-    let target = digital_root(2 * dr_x);
-    dr_b.ct_eq(&target)
-}
-
 /// Counts valid triangle candidates using the closed form (constant-time).
 /// Returns 0 if no valid candidates exist.
 pub fn count_triangle_filtered_closed_form(n: u64) -> u64 {
+    // Early exit for values that cannot possibly form a valid 3-layer chain
+    // Minimum required: 19 * digital_root(n) <= n and n >= 19
+    if n < 19 {
+        return 0;
+    }
+
     let a0 = digital_root(n);
     let a0_19 = 19u64.checked_mul(a0).unwrap_or(u64::MAX);
     let valid = a0_19.ct_le(&n); // 19*a0 <= n
@@ -372,6 +361,11 @@ where
 /// 2. Second layer: weighted sampling based on child candidate count.
 /// 3. Third layer: uniform sampling (all candidates have weight 1).
 pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain> {
+    // Early exit: 3-layer chain requires root_n >= 19
+    if root_n < 19 {
+        return None;
+    }
+
     const DEPTH: usize = 3;
     let mut chain = Vec::with_capacity(DEPTH);
     let mut current_n = root_n;
@@ -511,11 +505,31 @@ fn sample_three_layers_plain(root_n: u64, rng: &mut impl RngCore) -> Option<MrsC
 
 #[cfg(test)]
 fn count_triangle_filtered_bruteforce(n: u64) -> u64 {
-    generate_representation_family(n)
-        .iter()
-        .filter(|pair| validate_triangle_condition(pair.b, n).unwrap_u8() == 1)
-        .count() as u64
+    // Gebruik de geïmporteerde functies uit core
+    let a0 = digital_root(n);
+    if 19 * a0 > n {
+        return 0;
     }
+    let b0 = (n - 19 * a0) / 9;
+    let k_max = b0 / 19;
+    let target = digital_root(2 * a0);
+    let k0 = (b0 + 9 - target) % 9;
+    if k0 > k_max {
+        return 0;
+    }
+    let mut count = 0;
+    let mut t = 0;
+    while k0 + 9 * t <= k_max {
+        let k = k0 + 9 * t;
+        let a = a0 + 9 * k;
+        let b = b0 - 19 * k;
+        if validate_triangle_condition(b, n).unwrap_u8() == 1 {
+            count += 1;
+        }
+        t += 1;
+    }
+    count
+}
 
 // ============================================================================
 // Test Suite
@@ -528,6 +542,7 @@ mod tests {
 
     #[test]
     fn test_digital_root() {
+        // digital_root wordt geïmporteerd uit core
         assert_eq!(digital_root(0), 0);
         assert_eq!(digital_root(9), 9);
         assert_eq!(digital_root(10), 1);
@@ -536,6 +551,7 @@ mod tests {
 
     #[test]
     fn test_triangle_condition_validation() {
+        // validate_triangle_condition wordt geïmporteerd uit core
         assert!(validate_triangle_condition(10, 5).unwrap_u8() == 1);
         assert!(validate_triangle_condition(9, 5).unwrap_u8() == 0);
     }
@@ -626,4 +642,4 @@ mod tests {
         let result = sample_three_layers_ct(root_n, &mut rng);
         let _ = result;
     }
-}
+                        }
