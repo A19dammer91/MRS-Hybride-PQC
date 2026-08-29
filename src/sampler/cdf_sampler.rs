@@ -20,10 +20,10 @@
 //!   iterations regardless of input, so it takes constant time.
 
 use crate::core::diophantine::{
-    generate_representation_family, DiophantinePair, digital_root, validate_triangle_condition,
+    DiophantinePair, digital_root,
 };
 use rand::RngCore;
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeGreater, ConstantTimeLess};
 use zeroize::Zeroize;
 
 /// A complete 3-layer witness chain.
