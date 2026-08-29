@@ -420,7 +420,7 @@ fn verify_chain_validity(chain: &MrsChain, root_n: u64) -> bool {
 }
 
 // ============================================================================
-// Public Constant-Time Sampler with Retries
+// PUBLIC API - Exported Functions
 // ============================================================================
 
 /// Samples a 3-layer witness chain in constant time with retries.
@@ -428,7 +428,7 @@ fn verify_chain_validity(chain: &MrsChain, root_n: u64) -> bool {
 /// # Parameters
 /// - `root_n`: the root value to sample from
 /// - `rng`: cryptographically secure RNG
-/// - `max_attempts`: maximum number of sampling attempts (default: 10)
+/// - `max_attempts`: maximum number of sampling attempts
 /// 
 /// # Returns
 /// - `Some(MrsChain)` if a valid chain is found
@@ -465,12 +465,18 @@ pub fn sample_three_layers_ct_with_retries(
 }
 
 /// Wrapper that uses default retry count (10 attempts)
+/// This is the PRIMARY public API for witness generation.
 pub fn sample_three_layers_safe(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain> {
     sample_three_layers_ct_with_retries(root_n, rng, 10)
 }
 
+/// Original sampler - kept for backwards compatibility
+pub fn sample_three_layers(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain> {
+    sample_three_layers_ct(root_n, rng)
+}
+
 // ============================================================================
-// Original Public Constant-Time Sampler (kept for backwards compatibility)
+// Core Sampler Implementation
 // ============================================================================
 
 /// Samples a 3-layer witness chain in constant time.
@@ -570,13 +576,6 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
     } else {
         None
     }
-}
-
-/// Alias kept for readability at call sites that don't need to spell out
-/// `ct` — this always resolves to the constant-time implementation above.
-/// There is no separate non-constant-time production path.
-pub fn sample_three_layers(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain> {
-    sample_three_layers_ct(root_n, rng)
 }
 
 // ============================================================================
@@ -798,4 +797,4 @@ mod tests {
         // If we got here, no panics occurred
         println!("[INFO] Retry test passed without panics");
     }
- }
+            }
