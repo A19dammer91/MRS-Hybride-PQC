@@ -1,3 +1,4 @@
+
 pub mod cdf_sampler;
 
 pub use cdf_sampler::{
@@ -7,5 +8,6 @@ pub use cdf_sampler::{
     sample_three_layers,
     sample_three_layers_safe,
     sample_three_layers_ct_with_retries,
+    LayerParams,
     MrsChain,
 };
