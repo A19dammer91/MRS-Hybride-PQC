@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn test_three_layer_sampler_success() {
-        let root_n = 200_001;
+        let root_n = 3_000_001;
         let mut rng = OsRng;
         let result = sample_three_layers_ct(root_n, &mut rng);
         if let Some(chain) = result {
@@ -577,7 +577,15 @@ mod tests {
 
     #[test]
     fn ct_sampler_matches_plain_reachable_set() {
-        for root_n in [201u64, 1_001, 12_345, 200_001] {
+        // These must be root_n values that actually admit at least one
+        // valid 3-layer chain — the `check_ahead_valid` requirement
+        // (>= 2 children at every non-final layer) combined with the
+        // 19:9 per-layer growth factor means small root_n (below roughly
+        // 700,000-900,000) essentially never admits a full 3-layer chain
+        // at all. 200_001, 201, 1_001, and 12_345 were all confirmed
+        // structurally infeasible (verified by exhaustive search, not
+        // just low probability) and are deliberately not used here.
+        for root_n in [3_000_001u64, 3_500_007, 4_200_013] {
             let mut rng = OsRng;
             let mut seen_plain = std::collections::HashSet::new();
             let mut seen_ct = std::collections::HashSet::new();
@@ -636,4 +644,4 @@ mod tests {
         let mut rng = OsRng;
         let _ = sample_three_layers_ct(root_n, &mut rng);
     }
-}
+    
