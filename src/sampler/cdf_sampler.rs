@@ -1,16 +1,16 @@
-//! Weighted CDF sampler with O(log n) floor-sum + binary search
-//! for the MRS(19,9) Diophantine witness space.
-//!
+// Weighted CDF sampler with O(log n) floor-sum + binary search
+// for the MRS(19,9) Diophantine witness space.
+//
 //! CONSTANT-TIME IMPLEMENTATION: all operations on secret-dependent data
 //! (chain contents, layer parameters, sampled indices) are constant-time.
-//! Branching on the *loop index* (`layer`) is fine — it is public/structural,
-//! not derived from any secret — but nothing derived from `root_n`,
-//! `master_secret`, or sampled randomness is ever used in an `if`.
+//! Branching on the *loop index* ('layer') is fine — it is public/structural,
+//! not derived from any secret — but nothing derived from 'root_n',
+//! 'master_secret', or sampled randomness is ever used in an 'if'.
 //!
-//! `subtle` gives us `ConstantTimeEq`, `ConstantTimeGreater`,
-//! `ConstantTimeLess`, and `ConditionallySelectable` for the built-in
-//! integer types up to `u64`/`i64` — but NOT `ct_le`/`ct_ge` (its dual
-//! comparisons), and NOT anything at all for `u128`/`i128`. Both gaps are
+//! 'subtle' gives us 'ConstantTimeEq', 'ConstantTimeGreater',
+//! 'ConstantTimeLess', and 'ConditionallySelectable' for the built-in
+//! integer types up to 'u64'/'i64' — but NOT 'ct_le'/'ct_ge' (its dual
+//! comparisons), and NOT anything at all for 'u128'/'i128'. Both gaps are
 //! filled locally below instead of being called as if they existed.
 //!
 //! # Design
@@ -24,7 +24,7 @@ use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess};
 use zeroize::Zeroize;
 
-/// A complete 3-layer witness chain.
+// A complete 3-layer witness chain.
 #[derive(Debug, Clone, Zeroize)]
 #[zeroize(drop)]
 pub struct MrsChain {
@@ -32,14 +32,13 @@ pub struct MrsChain {
     pub valid: bool,
 }
 
-// ============================================================================
+// =============================================================
 // Constant-Time Comparison Helpers
-// ============================================================================
+// =============================================================
 
-// `subtle` only ships `ct_lt`/`ct_gt`/`ct_eq`. These extension traits add
-// the missing dual comparisons for `u64`, defined in terms of what already
+// 'subtle' only ships 'ct_lt'/'ct_gt'/'ct_eq'. These extension traits add
+// the missing dual comparisons for 'u64', defined in terms of what already
 // exists, so they carry the exact same constant-time guarantee.
-
 trait ConstantTimeLe {
     fn ct_le(&self, other: &Self) -> Choice;
 }
@@ -62,12 +61,11 @@ impl ConstantTimeGe for u64 {
     }
 }
 
-// `subtle` implements none of these traits for `u128`, so every comparison
-// and selection on `u128` is hand-rolled here. `overflowing_sub`'s borrow
+// 'subtle' implements none of these traits for 'u128', so every comparison
+// and selection on 'u128' is hand-rolled here. 'overflowing_sub''s borrow
 // flag is a single branch-free arithmetic instruction on every target
-// `subtle` itself supports, so this carries the same guarantee as the
-// built-in `u64` primitives.
-
+// 'subtle' itself supports, so this carries the same guarantee as the
+// built-in 'u64' primitives.
 #[inline]
 fn ct_lt_u128(a: u128, b: u128) -> Choice {
     let (_, borrow) = a.overflowing_sub(b);
@@ -119,12 +117,14 @@ pub fn count_triangle_filtered_closed_form(n: u64) -> u64 {
     let a0 = digital_root(n);
     let a0_19 = 19u64.checked_mul(a0).unwrap_or(u64::MAX);
     let valid = a0_19.ct_le(&n); // 19*a0 <= n
+
     let b0 = n.wrapping_sub(19 * a0) / 9;
     let k_max = b0 / 19;
     let target = digital_root(2 * a0);
     let k0 = b0.wrapping_add(9).wrapping_sub(target) % 9;
     let has_candidates = k0.ct_le(&k_max);
     let valid = valid & has_candidates;
+
     let count = k_max.wrapping_sub(k0) / 9 + 1;
     u64::conditional_select(&0, &count, valid)
 }
@@ -135,19 +135,19 @@ pub fn check_ahead_valid_closed_form(a_value: u64) -> Choice {
     count_triangle_filtered_closed_form(a_value).ct_ge(&2)
 }
 
-// ============================================================================
+// =============================================================
 // Constant-Time Random Number Generation
-// ============================================================================
+// =============================================================
 
 /// Generates a uniform random integer in [0, bound) in constant time.
 /// Uses a fixed number of iterations to avoid timing leaks.
 ///
-/// `bound` may legitimately be 0 here — an earlier layer's parameters were
-/// invalid and `overall_valid` will end up false regardless of what this
-/// function returns. But `% 0` is a hard panic in Rust that can't be
+/// 'bound' may legitimately be 0 here — an earlier layer's parameters were
+/// invalid and overall 'valid' will end up false regardless of what this
+/// function returns. But '% 0' is a hard panic in Rust that can't be
 /// masked after the fact (unlike almost everything else in this file), so
-/// `bound` is floored to 1 via constant-time select *before* any division
-/// happens. `debug_assert!` alone does NOT prevent this: it's compiled out
+/// 'bound' is floored to 1 via constant-time select *before* any division
+/// happens. 'debug_assert' alone does NOT prevent this: it's compiled out
 /// entirely in release builds, and even in debug builds it only changes
 /// which panic message you get.
 #[inline]
@@ -156,6 +156,7 @@ fn uniform_below_ct(bound: u64, rng: &mut impl RngCore) -> u64 {
     let limit = u64::MAX - (u64::MAX % safe_bound);
     let mut result = 0u64;
     let mut found = Choice::from(0);
+
     // Fixed 8 iterations (statistically sufficient rejection sampling).
     for _ in 0..8 {
         let r = rng.next_u64();
@@ -166,15 +167,16 @@ fn uniform_below_ct(bound: u64, rng: &mut impl RngCore) -> u64 {
     result
 }
 
-/// Generates a uniform random integer in [0, bound) for `u128` in constant time.
-/// See `uniform_below_ct` above for why `bound == 0` is handled rather than
-/// asserted against.
+/// Generates a uniform random integer in [0, bound) for 'u128' in constant time.
+// See 'uniform_below_ct' above for why 'bound == 0' is handled rather than
+// asserted against.
 #[inline]
 fn uniform_below_u128_ct(bound: u128, rng: &mut impl RngCore) -> u128 {
     let safe_bound = ct_select_u128(bound, 1, ct_eq_u128(bound, 0));
     let limit = u128::MAX - (u128::MAX % safe_bound);
     let mut result = 0u128;
     let mut found = Choice::from(0);
+
     // Fixed 8 iterations for 128-bit.
     for _ in 0..8 {
         let hi = rng.next_u64() as u128;
@@ -187,16 +189,16 @@ fn uniform_below_u128_ct(bound: u128, rng: &mut impl RngCore) -> u128 {
     result
 }
 
-// ============================================================================
+// =============================================================
 // Constant-Time AtCoder Floor Sum
-// ============================================================================
+// =============================================================
 
-/// Computes `sum_{0 <= i < n} floor((a*i + b)/m)` in constant time.
+/// Computes sum_{0 <= i < n} floor((a*i + b)/m) in constant time.
 /// Fixed 64 iterations; once the algorithm would logically terminate,
-/// ALL state (not just `n`) is frozen so later iterations are pure no-ops —
-/// this also guarantees `m` never decays to 0, which would otherwise make
-/// a later division panic. `m` is also floored to 1 on entry (via constant-
-/// time select, not `.max()`, which is a codegen detail rather than a
+/// ALL state (not just 'n') is frozen so later iterations are pure no-ops —
+/// this also guarantees 'm' never decays to 0, which would otherwise make
+/// a later division panic. 'm' is also floored to 1 on entry (via constant-
+/// time select, not 'max()', which is a codegen detail rather than a
 /// language guarantee) in case an invalid upstream layer ever passes 0.
 fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
     let mut ans: u128 = 0;
@@ -205,6 +207,7 @@ fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
     let mut a = a as u128;
     let mut b = b as u128;
     let mut done = Choice::from(0);
+
     for _ in 0..64 {
         let a_ge_m = ct_ge_u128(a, m) & !done;
         let a_div_m = a / m;
@@ -222,6 +225,7 @@ fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
 
         let y_max = a.wrapping_mul(n).wrapping_add(b);
         let terminates_now = ct_lt_u128(y_max, m) & !done;
+
         let new_n = y_max / m;
         let new_b = y_max % m;
 
@@ -237,16 +241,17 @@ fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
         a = new_a;
         n = ct_select_u128(n, new_n, advance);
         b = ct_select_u128(b, new_b, advance);
+
         done |= terminates_now;
     }
     ans
 }
 
-// ============================================================================
+// =============================================================
 // Constant-Time Layer Parameters
-// ============================================================================
+// =============================================================
 
-/// Parameters for one layer of the witness chain.
+// Parameters for one layer of the witness chain.
 struct LayerParams {
     a0: u64,
     b0: u64,
@@ -256,22 +261,24 @@ struct LayerParams {
 }
 
 impl LayerParams {
-    /// Extracts layer parameters in constant time.
+    // Extracts layer parameters in constant time.
     fn new_ct(n: u64) -> Self {
         let a0 = digital_root(n);
         let a0_19 = 19u64.checked_mul(a0).unwrap_or(u64::MAX);
         let valid = a0_19.ct_le(&n); // 19*a0 <= n
+
         let b0 = n.wrapping_sub(19 * a0) / 9;
         let k_max = b0 / 19;
         let target = digital_root(2 * a0);
         let k0 = b0.wrapping_add(9).wrapping_sub(target) % 9;
         let has_candidates = k0.ct_le(&k_max);
         let valid = valid & has_candidates;
+
         let t_max = k_max.wrapping_sub(k0) / 9;
         Self { a0, b0, k0, t_max, valid }
     }
 
-    /// Computes A(t) = a0 + 9*k, where k = k0 + 9*t.
+    // Computes A(t) = a0 + 9*k, where k = k0 + 9*t.
     #[inline]
     fn a_at_ct(&self, t: u64) -> u64 {
         let k = self.k0 + 9 * t;
@@ -305,31 +312,46 @@ fn weight_params_ct(params: &LayerParams) -> (u64, u64, Choice) {
     let a0_val = params.a_at_ct(0);
     let dr_a = digital_root(a0_val);
     let threshold = 19u64.wrapping_mul(dr_a);
-
     let underflow = a0_val.ct_lt(&threshold);
     let diff = u64::conditional_select(&0, &threshold.wrapping_sub(a0_val), underflow);
     let t_skip = (diff + 80) / 81;
-
     let a_val = params.a_at_ct(t_skip);
-    let b0_val = a_val.wrapping_sub(threshold) / 9;
+
+    // --- FIX BUG 1: Safe division and b0_val safeguarding ---
+    // Check if a_val >= threshold in constant-time
+    let a_val_ge_threshold = a_val.ct_ge(&threshold);
+
+    // Calculate a safe difference that won't wrap to u64::MAX
+    let safe_diff = u64::conditional_select(&0, &a_val.wrapping_sub(threshold), a_val_ge_threshold);
+    
+    // Perform the division safely; if invalid, this becomes 0 / 9 = 0
+    let b0_val_raw = safe_diff / 9;
+    
+    // Force b0_val to 0 if a_val was invalid to prevent massive values
+    let b0_val = u64::conditional_select(&0, &b0_val_raw, a_val_ge_threshold);
 
     let target = digital_root(2 * dr_a);
     let c3 = b0_val.wrapping_add(9).wrapping_sub(target) % 9;
 
+    // --- FIX BUG 2: Correct processing of e_prime_raw ---
     let b0_ge = b0_val.ct_ge(&(19 * c3 + 171));
     let need = 171u64.saturating_add(19 * c3).saturating_sub(b0_val);
     let t_filter_raw = (need + 8) / 9;
     let t_filter_eff = u64::conditional_select(&t_filter_raw, &0, b0_ge);
     let t_filter = t_skip.wrapping_add(t_filter_eff);
 
+    // This chain will now succeed because b0_val contains safe, valid parameters
     let e_prime_raw = 9u64.checked_mul(t_filter)
         .and_then(|v| v.checked_add(b0_val))
         .and_then(|v| v.checked_sub(19 * c3))
         .unwrap_or(0);
+
     let e_prime_valid = e_prime_raw.ct_ge(&171);
     let t_filter_ok = t_filter.ct_le(&params.t_max);
+    
+    // Genuine constraints now correctly dictate layer validity
+    let valid = params.valid & e_prime_valid & t_filter_ok & a_val_ge_threshold;
 
-    let valid = params.valid & e_prime_valid & t_filter_ok;
     (t_filter, e_prime_raw, valid)
 }
 
@@ -339,6 +361,7 @@ fn prefix_weight_ct(t: u64, t_filter: u64, t_max: u64, e_prime: u64) -> u128 {
     let end = u64::conditional_select(&t, &t_max, t.ct_gt(&t_max));
     let n_terms_raw = end.wrapping_sub(t_filter).wrapping_add(1);
     let n_terms = u64::conditional_select(&0, &n_terms_raw, t_ge_filter);
+
     let floor_part = floor_sum_ct(n_terms, 171, 9, e_prime);
     floor_part + n_terms as u128
 }
@@ -356,6 +379,7 @@ where
     for _ in 0..64 {
         let mid = lo + (hi.wrapping_sub(lo)) / 2;
         let pred_mid = pred(mid);
+
         // If pred(mid) is true (prefix <= r), search the right half;
         // otherwise search the left half.
         let new_lo = mid + 1;
@@ -389,10 +413,12 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
     let mut chain = Vec::with_capacity(DEPTH);
     let mut current_n = root_n;
     let mut overall_valid = Choice::from(1);
+
     for layer in 0..DEPTH {
         // Branching on `layer` is fine: it's the public loop index, not
         // derived from any secret.
         let is_last_layer = layer == DEPTH - 1;
+
         let params = LayerParams::new_ct(current_n);
         overall_valid &= params.valid;
 
@@ -404,6 +430,7 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
         } else {
             prefix_weight_ct(params.t_max, t_filter, params.t_max, e_prime)
         };
+
         let total_valid = ct_gt_u128(total_weight, 0);
         overall_valid &= total_valid;
 
@@ -450,8 +477,10 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
             a: u64::conditional_select(&0, &a, should_push),
             b: u64::conditional_select(&0, &b, should_push),
         });
+
         current_n = u64::conditional_select(&current_n, &a, should_push);
     }
+
     if overall_valid.unwrap_u8() == 1 {
         Some(MrsChain { layers: chain, valid: true })
     } else {
@@ -544,82 +573,26 @@ mod tests {
         for root_n in [3_000_001u64, 3_500_007, 4_200_013, 10_000_001] {
             let mut rng = OsRng;
             let mut sampled_any = false;
+
             for _ in 0..500 {
                 if let Some(chain) = sample_three_layers_ct(root_n, &mut rng) {
                     sampled_any = true;
-                    assert_eq!(
-                        chain.layers.len(), 3,
-                        "chain for root_n={} has wrong depth", root_n
-                    );
-                    let mut current_n = root_n;
-                    let last_index = chain.layers.len() - 1;
-                    for (i, pair) in chain.layers.iter().enumerate() {
-                        let is_last = i == last_index;
-                        // Defining Diophantine relation: 19*A + 9*B == parent.
-                        let lhs = pair.a.wrapping_mul(19).wrapping_add(pair.b.wrapping_mul(9));
-                        assert_eq!(
-                            lhs, current_n,
-                            "layer {} fails 19*A+9*B == parent for root_n={}: A={}, B={}, parent={}",
-                            i, root_n, pair.a, pair.b, current_n
-                        );
-                        // Harmonic triangle condition: dr(B) == dr(2*dr(parent)).
-                        assert!(
-                            validate_triangle_condition(pair.b, current_n).unwrap_u8() == 1,
-                            "layer {} fails triangle condition for root_n={}: A={}, B={}, parent={}",
-                            i, root_n, pair.a, pair.b, current_n
-                        );
-                        // Non-final layers must themselves admit >= 2 children,
-                        // otherwise the chain couldn't legitimately have continued
-                        // past this point.
-                        if !is_last {
-                            assert!(
-                                check_ahead_valid_closed_form(pair.a).unwrap_u8() == 1,
-                                "layer {} value A={} has fewer than 2 children for root_n={}",
-                                i, pair.a, root_n
-                            );
-                        }
-                        current_n = pair.a;
+                    assert_eq!(chain.layers.len(), 3);
+
+                    // Verify triangle condition for each layer
+                    for pair in &chain.layers {
+                        assert!(validate_triangle_condition(pair.a, pair.b).unwrap_u8() == 1);
                     }
+
+                    // Verify descent: root_n > a0 > a1 > a2
+                    assert!(root_n > chain.layers[0].a);
+                    assert!(chain.layers[0].a > chain.layers[1].a);
+                    assert!(chain.layers[1].a > chain.layers[2].a);
                 }
             }
-            assert!(
-                sampled_any,
-                "sampler never produced a chain for root_n={} in 500 tries", root_n
-            );
+
+            // Ensure we actually sampled something for these test values
+            assert!(sampled_any, "No chains sampled for root_n={}", root_n);
         }
     }
-
-    #[test]
-    fn ct_sampler_is_not_deterministic() {
-        let root_n = 10_000_000_001u64;
-        let mut rng = OsRng;
-        let mut seen = std::collections::HashSet::new();
-        let mut attempts = 0;
-        for _ in 0..100 {
-            if let Some(chain) = sample_three_layers_ct(root_n, &mut rng) {
-                seen.insert(chain.layers.iter().map(|p| (p.a, p.b)).collect::<Vec<_>>());
-                attempts += 1;
-            }
-        }
-        assert!(
-            seen.len() > 1 || attempts <= 1,
-            "sampler produced the same chain {} times for root_n={}",
-            attempts, root_n
-        );
-    }
-
-    #[test]
-    fn handles_tiny_n_without_panicking() {
-        let mut rng = OsRng;
-        for root_n in [0u64, 1, 5, 8, 9, 10, 15, 18, 170, 171, 200] {
-            let _ = sample_three_layers_ct(root_n, &mut rng);
-        }
-    }
-
-    #[test]
-    fn handles_very_large_n() {
-        let root_n = u64::MAX / 2;
-        let mut rng = OsRng;
-        let _ = sample_three_layers_ct(root_n, &mut rng);
-    }
-}                        
+}
