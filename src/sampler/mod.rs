@@ -1,7 +1,7 @@
 pub mod cdf_sampler;
 
-// Rechtstreekse imports om de errors op te lossen
+// Direct imports to fix the compiler errors
 pub use crate::core::diophantine::{digital_root, validate_triangle_condition};
 
-// Overgebleven actieve import uit cdf_sampler
-pub use cdf_sampler::MrsChain;
+// Active imports required by src/framework.rs
+pub use cdf_sampler::{sample_three_layers, MrsChain};
