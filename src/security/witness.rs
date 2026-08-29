@@ -11,7 +11,7 @@
 //! indistinguishable. The adversary's advantage in detecting the
 //! authentic witness is negligible in the security parameter.
 
-use crate::sampler::{sample_three_layers_ct, sample_three_layers_safe, MrsChain};
+use crate::sampler::{sample_three_layers_safe, MrsChain};
 use rand::RngCore;
 use sha2::{Sha256, Digest};
 use subtle::{Choice, ConstantTimeEq};
@@ -125,7 +125,7 @@ impl MasterSecret {
         authentic: &Witness,
         rng: &mut impl RngCore,
     ) -> Option<Witness> {
-        for attempt in 0..512 {
+        for _attempt in 0..512 {
             if let Some(chain) = sample_three_layers_safe(space.root_n, rng) {
                 let same = chains_equal_ct(&chain, &authentic.chain);
                 if same.unwrap_u8() == 0 {
@@ -276,7 +276,7 @@ fn chains_equal_ct(a: &MrsChain, b: &MrsChain) -> Choice {
         eq &= pa.b.ct_eq(&pb.b);
     }
     eq
-        }
+}
 
 // =============================================================================
 // Deterministic RNG for reproducible authentic witness derivation
@@ -578,4 +578,4 @@ mod tests {
         // If we got here, no panics occurred
         println!("[INFO] Retry test passed without panics");
     }
-                                                        }
+        }
