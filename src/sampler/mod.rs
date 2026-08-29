@@ -1,7 +1,9 @@
 pub mod cdf_sampler;
 
-// Direct imports to fix the compiler errors
-pub use crate::core::diophantine::{digital_root, validate_triangle_condition};
-
-// Active imports required by src/framework.rs
-pub use cdf_sampler::{sample_three_layers, MrsChain};
+pub use cdf_sampler::{
+    count_triangle_filtered_closed_form,
+    check_ahead_valid_closed_form,
+    sample_three_layers_ct,
+    sample_three_layers,
+    MrsChain,
+};
