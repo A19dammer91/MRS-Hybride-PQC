@@ -19,7 +19,7 @@
 //! - All per-layer work is O(log n) but runs in a fixed number of
 //!   iterations regardless of input, so it takes constant time.
 
-use crate::core::diophantine::{DiophantinePair, digital_root, validate_triangle_condition};
+use crate::core::diophantine::{DiophantinePair, digital_root};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess};
 use zeroize::Zeroize;
@@ -535,6 +535,7 @@ fn count_triangle_filtered_bruteforce(n: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::diophantine::validate_triangle_condition;
     use rand::rngs::OsRng;
 
     #[test]
