@@ -1,19 +1,18 @@
 //! Witness Authentication & Coercion-Resistance Engine
 //!
 //! Core design principle:
-//!   The MRS Diophantine space W_N contains many valid witnesses.
-//!   Only one is cryptographically bound to the intended identity.
-//!   Under coercion, the user reveals an alternative witness w' ∈ W_N
-//!   that is mathematically valid but NOT bound to the identity.
+//! The MRS Diophantine space W_N contains many valid witnesses.
+//! Only one is cryptographically bound to the intended identity.
+//! Under coercion, the user reveals an alternative witness w' ∈ W_N
+//! that is mathematically valid but NOT bound to the identity.
 //!
 //! Security guarantee:
-//!   Without the master_secret, all witnesses in W_N are computationally
-//!   indistinguishable. The adversary's advantage in detecting the
-//!   authentic witness is negligible in the security parameter.
+//! Without the master_secret, all witnesses in W_N are computationally
+//! indistinguishable. The adversary's advantage in detecting the
+//! authentic witness is negligible in the security parameter.
 
-use crate::MrsChain;
-use crate::sampler::cdf_sampler::sample_three_layers_ct;
 use crate::core::diophantine::DiophantinePair;
+use crate::sampler::{sample_three_layers_ct, MrsChain};
 use rand::RngCore;
 use sha2::{Sha256, Digest};
 use subtle::{Choice, ConstantTimeEq};
@@ -170,13 +169,11 @@ impl WitnessSpace {
     /// This is a PUBLIC operation — anyone can run it.
     pub fn verify_membership(&self, witness: &Witness) -> WitnessStatus {
         let chain = &witness.chain;
-
         if chain.layers.len() != self.depth {
             return WitnessStatus::Invalid;
         }
 
         let mut current_n = self.root_n;
-
         for pair in &chain.layers {
             let lhs = 19u64.wrapping_mul(pair.a).wrapping_add(9u64.wrapping_mul(pair.b));
             if lhs != current_n {
@@ -207,7 +204,7 @@ pub fn verify_witness_authenticity(
         &chain_hash,
     );
 
-    let tags_match = expected_tag.ct_eq(&witness.binding_tag);
+    let tags_match = subtle::constant_time_eq(&expected_tag, &witness.binding_tag);
 
     if tags_match.unwrap_u8() == 1 {
         WitnessStatus::Authentic
@@ -471,12 +468,12 @@ mod tests {
 
         let auth_mean = authentic_a_sums.iter().sum::<u64>() as f64 / authentic_a_sums.len() as f64;
         let alibi_mean = alibi_a_sums.iter().sum::<u64>() as f64 / alibi_a_sums.len() as f64;
-
         let diff_pct = (auth_mean - alibi_mean).abs() / auth_mean;
+
         assert!(
             diff_pct < 0.05,
             "Authentic and alibi witnesses are statistically distinguishable: {} vs {}",
             auth_mean, alibi_mean
         );
     }
-            }
+        }
