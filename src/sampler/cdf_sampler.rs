@@ -252,17 +252,17 @@ fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
 // =============================================================
 
 // Parameters for one layer of the witness chain.
-struct LayerParams {
-    a0: u64,
-    b0: u64,
-    k0: u64,
-    t_max: u64,
-    valid: Choice,
+pub struct LayerParams {
+    pub a0: u64,
+    pub b0: u64,
+    pub k0: u64,
+    pub t_max: u64,
+    pub valid: Choice,
 }
 
 impl LayerParams {
     // Extracts layer parameters in constant time.
-    fn new_ct(n: u64) -> Self {
+    pub fn new_ct(n: u64) -> Self {
         let a0 = digital_root(n);
         let a0_19 = 19u64.checked_mul(a0).unwrap_or(u64::MAX);
         let valid = a0_19.ct_le(&n); // 19*a0 <= n
@@ -280,14 +280,14 @@ impl LayerParams {
 
     // Computes A(t) = a0 + 9*k, where k = k0 + 9*t.
     #[inline]
-    fn a_at_ct(&self, t: u64) -> u64 {
+    pub fn a_at_ct(&self, t: u64) -> u64 {
         let k = self.k0 + 9 * t;
         self.a0 + 9 * k
     }
 
     /// Computes B(t) = b0 - 19*k, where k = k0 + 9*t.
     #[inline]
-    fn b_at_ct(&self, t: u64) -> u64 {
+    pub fn b_at_ct(&self, t: u64) -> u64 {
         let k = self.k0 + 9 * t;
         self.b0.wrapping_sub(19 * k)
     }
@@ -388,6 +388,7 @@ where
     }
     lo
 }
+
 // ============================================================================
 // Chain Verification
 // ============================================================================
@@ -550,6 +551,10 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
             check_ahead_valid_closed_form(a)
         };
         overall_valid &= layer_ok;
+
+        // Also verify triangle condition directly before pushing
+        let triangle_valid = validate_triangle_condition(a, b);
+        overall_valid &= triangle_valid;
 
         // Only commit if everything up to this point is valid.
         let should_push = overall_valid;
