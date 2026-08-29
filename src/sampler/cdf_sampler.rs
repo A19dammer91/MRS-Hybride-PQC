@@ -484,24 +484,6 @@ fn count_triangle_filtered_bruteforce(n: u64) -> u64 {
 // Test Suite
 // ============================================================================
 
-// ============================================================================
-// Test-Only Independent Reference Count
-// ============================================================================
-
-/// Counts valid triangle candidates by the triangle condition using
-/// `core::diophantine`'s own (Popoviciu-cardinality-based) generator — a
-/// genuinely different derivation from `count_triangle_filtered_closed_form`'s
-/// a0/b0/k0/k_max approach, so this actually catches a bug in either one
-/// instead of checking a formula against a restatement of itself.
-#[cfg(test)]
-fn count_triangle_filtered_bruteforce(n: u64) -> u64 {
-    crate::core::diophantine::generate_representation_family(n).len() as u64
-}
-
-// ============================================================================
-// Test Suite
-// ============================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
