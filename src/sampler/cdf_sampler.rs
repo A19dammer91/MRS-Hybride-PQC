@@ -20,7 +20,7 @@
 //!   iterations regardless of input, so it takes constant time.
 
 use crate::core::diophantine::{
-    DiophantinePair, digital_root,
+    DiophantinePair, digital_root, validate_triangle_condition,
 };
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeGreater, ConstantTimeLess};
