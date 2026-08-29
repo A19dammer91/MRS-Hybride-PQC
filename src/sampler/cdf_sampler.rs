@@ -409,9 +409,18 @@ fn verify_chain_validity(chain: &MrsChain, root_n: u64) -> bool {
         return false;
     }
     
-    // Verify triangle condition for each layer
+    // Verify triangle condition for each layer.
+    // FIX: `validate_triangle_condition(b: u64, x: u64)` expects the B-value
+    // first and the anchor value second (dr(B) == dr(2*dr(X))). This used to
+    // be called as `validate_triangle_condition(pair.a, pair.b)` — arguments
+    // swapped — combined with `!x.unwrap_u8() == 1`, which due to Rust's
+    // operator precedence parses as `(!x.unwrap_u8()) == 1` and is therefore
+    // *always* false regardless of the result, making this check a
+    // permanent no-op. Both are corrected here: arguments in the right
+    // order, and the negation applied to the boolean comparison, not to the
+    // raw u8 before it.
     for pair in &chain.layers {
-        if !validate_triangle_condition(pair.a, pair.b).unwrap_u8() == 1 {
+        if !(validate_triangle_condition(pair.b, pair.a).unwrap_u8() == 1) {
             return false;
         }
     }
@@ -557,8 +566,14 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
         };
         overall_valid &= layer_ok;
 
-        // Also verify triangle condition directly before pushing
-        let triangle_valid = validate_triangle_condition(a, b);
+        // Also verify triangle condition directly before pushing.
+        // FIX: `validate_triangle_condition(b: u64, x: u64)` expects
+        // (B-value, anchor-value) — i.e. dr(B) == dr(2*dr(X)). This was
+        // previously called as `validate_triangle_condition(a, b)`,
+        // swapping the arguments, which made the check fail for
+        // essentially every candidate and caused chain sampling to fail
+        // systematically regardless of root_n.
+        let triangle_valid = validate_triangle_condition(b, a);
         overall_valid &= triangle_valid;
 
         // Only commit if everything up to this point is valid.
@@ -797,4 +812,4 @@ mod tests {
         // If we got here, no panics occurred
         println!("[INFO] Retry test passed without panics");
     }
-            }
+}
