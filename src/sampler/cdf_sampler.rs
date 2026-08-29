@@ -388,7 +388,6 @@ where
     }
     lo
 }
-
 // ============================================================================
 // Chain Verification
 // ============================================================================
@@ -447,7 +446,7 @@ pub fn sample_three_layers_ct_with_retries(
     }
 
     // Try multiple times with different randomness
-    for attempt in 0..max_attempts {
+    for _attempt in 0..max_attempts {
         if let Some(chain) = sample_three_layers_ct(root_n, rng) {
             // Verify the chain is actually valid before returning
             if verify_chain_validity(&chain, root_n) {
@@ -456,7 +455,7 @@ pub fn sample_three_layers_ct_with_retries(
         }
         
         #[cfg(test)]
-        if attempt == max_attempts - 1 {
+        if _attempt == max_attempts - 1 {
             eprintln!("[DEBUG] Failed to sample chain for root_n={} after {} attempts", 
                      root_n, max_attempts);
         }
@@ -799,4 +798,4 @@ mod tests {
         // If we got here, no panics occurred
         println!("[INFO] Retry test passed without panics");
     }
-}
+ }
