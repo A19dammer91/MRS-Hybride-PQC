@@ -19,11 +19,9 @@
 //! - All per-layer work is O(log n) but runs in a fixed number of
 //!   iterations regardless of input, so it takes constant time.
 
-use crate::core::diophantine::{
-    DiophantinePair, digital_root, validate_triangle_condition,
-};
+use crate::core::diophantine::{DiophantinePair, digital_root, validate_triangle_condition};
 use rand::RngCore;
-use subtle::{Choice, ConditionallySelectable, ConstantTimeGreater, ConstantTimeLess};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess};
 use zeroize::Zeroize;
 
 /// A complete 3-layer witness chain.
@@ -99,19 +97,23 @@ fn ct_select_u128(a: u128, b: u128, choice: Choice) -> u128 {
     (b & mask) | (a & !mask)
 }
 
+#[inline]
+fn ct_eq_u128(a: u128, b: u128) -> Choice {
+    !ct_lt_u128(a, b) & !ct_gt_u128(a, b)
+}
+
 // ============================================================================
 // Core Mathematical Operations (Constant-Time)
 // ============================================================================
+// `digital_root` and `validate_triangle_condition` live in
+// `core::diophantine` — they are not redefined here. Two implementations
+// of the same formula drifting apart is exactly the kind of bug this
+// crate can't afford, so this module only ever adds NEW operations on
+// top of the shared ones.
 
 /// Counts valid triangle candidates using the closed form (constant-time).
 /// Returns 0 if no valid candidates exist.
 pub fn count_triangle_filtered_closed_form(n: u64) -> u64 {
-    // Early exit for values that cannot possibly form a valid 3-layer chain
-    // Minimum required: 19 * digital_root(n) <= n and n >= 19
-    if n < 19 {
-        return 0;
-    }
-
     let a0 = digital_root(n);
     let a0_19 = 19u64.checked_mul(a0).unwrap_or(u64::MAX);
     let valid = a0_19.ct_le(&n); // 19*a0 <= n
@@ -140,10 +142,19 @@ pub fn check_ahead_valid_closed_form(a_value: u64) -> Choice {
 
 /// Generates a uniform random integer in [0, bound) in constant time.
 /// Uses a fixed number of iterations to avoid timing leaks.
+///
+/// `bound` may legitimately be 0 here — an earlier layer's parameters were
+/// invalid and `overall_valid` will end up false regardless of what this
+/// function returns. But `% 0` is a hard panic in Rust that can't be
+/// masked after the fact (unlike almost everything else in this file), so
+/// `bound` is floored to 1 via constant-time select *before* any division
+/// happens. `debug_assert!` alone does NOT prevent this: it's compiled out
+/// entirely in release builds, and even in debug builds it only changes
+/// which panic message you get.
 #[inline]
 fn uniform_below_ct(bound: u64, rng: &mut impl RngCore) -> u64 {
-    debug_assert!(bound > 0, "bound must be positive");
-    let limit = u64::MAX - (u64::MAX % bound);
+    let safe_bound = u64::conditional_select(&bound, &1, bound.ct_eq(&0));
+    let limit = u64::MAX - (u64::MAX % safe_bound);
     let mut result = 0u64;
     let mut found = Choice::from(0);
 
@@ -151,17 +162,19 @@ fn uniform_below_ct(bound: u64, rng: &mut impl RngCore) -> u64 {
     for _ in 0..8 {
         let r = rng.next_u64();
         let accept = r.ct_lt(&limit) & !found;
-        result = u64::conditional_select(&result, &(r % bound), accept);
+        result = u64::conditional_select(&result, &(r % safe_bound), accept);
         found |= accept;
     }
     result
 }
 
 /// Generates a uniform random integer in [0, bound) for `u128` in constant time.
+/// See `uniform_below_ct` above for why `bound == 0` is handled rather than
+/// asserted against.
 #[inline]
 fn uniform_below_u128_ct(bound: u128, rng: &mut impl RngCore) -> u128 {
-    debug_assert!(bound > 0, "bound must be positive");
-    let limit = u128::MAX - (u128::MAX % bound);
+    let safe_bound = ct_select_u128(bound, 1, ct_eq_u128(bound, 0));
+    let limit = u128::MAX - (u128::MAX % safe_bound);
     let mut result = 0u128;
     let mut found = Choice::from(0);
 
@@ -171,7 +184,7 @@ fn uniform_below_u128_ct(bound: u128, rng: &mut impl RngCore) -> u128 {
         let lo = rng.next_u64() as u128;
         let r = (hi << 64) | lo;
         let accept = ct_lt_u128(r, limit) & !found;
-        result = ct_select_u128(result, r % bound, accept);
+        result = ct_select_u128(result, r % safe_bound, accept);
         found |= accept;
     }
     result
@@ -185,11 +198,13 @@ fn uniform_below_u128_ct(bound: u128, rng: &mut impl RngCore) -> u128 {
 /// Fixed 64 iterations; once the algorithm would logically terminate,
 /// ALL state (not just `n`) is frozen so later iterations are pure no-ops —
 /// this also guarantees `m` never decays to 0, which would otherwise make
-/// a later division panic.
+/// a later division panic. `m` is also floored to 1 on entry (via constant-
+/// time select, not `.max()`, which is a codegen detail rather than a
+/// language guarantee) in case an invalid upstream layer ever passes 0.
 fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
     let mut ans: u128 = 0;
     let mut n = n as u128;
-    let mut m = (m as u128).max(1); // Defensive: guard against m=0 on entry
+    let mut m = ct_select_u128(m as u128, 1, ct_lt_u128(m as u128, 1));
     let mut a = a as u128;
     let mut b = b as u128;
     let mut done = Choice::from(0);
@@ -215,15 +230,15 @@ fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
         let new_n = y_max / m;
         let new_b = y_max % m;
 
-        // Swap m and a only while still running; frozen state keeps m != 0.
-        // FIX: also freeze when terminating this iteration, matching the
-        // original recursive algorithm which does NOT recurse/swap on termination.
+        // Swap m and a only while genuinely still running — not even on
+        // the iteration that terminates, matching the original recursive
+        // algorithm, which does not recurse/swap once it terminates.
         let advance = !done & !terminates_now;
         let (new_m, new_a) = (ct_select_u128(m, a, advance), ct_select_u128(a, m, advance));
         m = new_m;
         a = new_a;
-        n = ct_select_u128(n, new_n, advance & !terminates_now);
-        b = ct_select_u128(b, new_b, advance & !terminates_now);
+        n = ct_select_u128(n, new_n, advance);
+        b = ct_select_u128(b, new_b, advance);
 
         done |= terminates_now;
     }
@@ -356,18 +371,15 @@ where
 /// - O(log n) work per layer via floor-sum + binary search, each bounded
 ///   by a fixed iteration count.
 /// - Cryptographically secure random sampling.
-/// - Returns `None` if no valid chain exists for the given `root_n`.
+/// - Returns `None` if no valid chain exists for the given `root_n` — but
+///   note `root_n` itself is never branched on to decide this; the `None`
+///   falls out of `overall_valid` staying false through every layer.
 ///
 /// # Layers
 /// 1. First layer: weighted sampling based on child candidate count.
 /// 2. Second layer: weighted sampling based on child candidate count.
 /// 3. Third layer: uniform sampling (all candidates have weight 1).
 pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain> {
-    // Early exit: 3-layer chain requires root_n >= 19
-    if root_n < 19 {
-        return None;
-    }
-
     const DEPTH: usize = 3;
     let mut chain = Vec::with_capacity(DEPTH);
     let mut current_n = root_n;
@@ -505,32 +517,15 @@ fn sample_three_layers_plain(root_n: u64, rng: &mut impl RngCore) -> Option<MrsC
     Some(MrsChain { layers: chain, valid: true })
 }
 
+/// Independent reference count: generates every representation and filters
+/// by the triangle condition using `core::diophantine`'s own (Popoviciu-
+/// cardinality-based) generator — a genuinely different derivation from
+/// `count_triangle_filtered_closed_form`'s a0/b0/k0/k_max approach, so this
+/// actually catches a bug in either one instead of checking a formula
+/// against a restatement of itself.
 #[cfg(test)]
 fn count_triangle_filtered_bruteforce(n: u64) -> u64 {
-    // Gebruik de geïmporteerde functies uit core
-    let a0 = digital_root(n);
-    if 19 * a0 > n {
-        return 0;
-    }
-    let b0 = (n - 19 * a0) / 9;
-    let k_max = b0 / 19;
-    let target = digital_root(2 * a0);
-    let k0 = (b0 + 9 - target) % 9;
-    if k0 > k_max {
-        return 0;
-    }
-    let mut count = 0;
-    let mut t = 0;
-    while k0 + 9 * t <= k_max {
-        let k = k0 + 9 * t;
-        let a = a0 + 9 * k;
-        let b = b0 - 19 * k;
-        if validate_triangle_condition(b, n).unwrap_u8() == 1 {
-            count += 1;
-        }
-        t += 1;
-    }
-    count
+    crate::core::diophantine::generate_representation_family(n).len() as u64
 }
 
 // ============================================================================
@@ -544,7 +539,6 @@ mod tests {
 
     #[test]
     fn test_digital_root() {
-        // digital_root wordt geïmporteerd uit core
         assert_eq!(digital_root(0), 0);
         assert_eq!(digital_root(9), 9);
         assert_eq!(digital_root(10), 1);
@@ -553,7 +547,6 @@ mod tests {
 
     #[test]
     fn test_triangle_condition_validation() {
-        // validate_triangle_condition wordt geïmporteerd uit core
         assert!(validate_triangle_condition(10, 5).unwrap_u8() == 1);
         assert!(validate_triangle_condition(9, 5).unwrap_u8() == 0);
     }
@@ -597,7 +590,6 @@ mod tests {
                 }
             }
 
-            // Every chain produced by the CT sampler must be reachable by the plain sampler.
             for chain in &seen_ct {
                 assert!(
                     seen_plain.contains(chain),
@@ -641,8 +633,6 @@ mod tests {
     fn handles_very_large_n() {
         let root_n = u64::MAX / 2;
         let mut rng = OsRng;
-        let result = sample_three_layers_ct(root_n, &mut rng);
-        let _ = result;
+        let _ = sample_three_layers_ct(root_n, &mut rng);
     }
 }
-
