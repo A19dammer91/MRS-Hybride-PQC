@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn test_authentic_witness_reproducible() {
         let master = MasterSecret::from_entropy(&[42u8; 32]);
-        let space = WitnessSpace::new(200_001, 3);
+        let space = WitnessSpace::new(3_000_001, 3);
         let id = b"alice@example.com";
         let session = b"session-2026-08-28";
 
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn test_authentic_witness_different_sessions() {
         let master = MasterSecret::from_entropy(&[42u8; 32]);
-        let space = WitnessSpace::new(200_001, 3);
+        let space = WitnessSpace::new(3_000_001, 3);
         let id = b"alice@example.com";
 
         let w1 = master.generate_authentic_witness(&space, id, b"sess-1").unwrap();
@@ -355,7 +355,7 @@ mod tests {
     #[test]
     fn test_alternative_witness_differs_from_authentic() {
         let master = MasterSecret::from_entropy(&[42u8; 32]);
-        let space = WitnessSpace::new(200_001, 3);
+        let space = WitnessSpace::new(3_000_001, 3);
         let id = b"alice@example.com";
         let session = b"session-2026-08-28";
 
@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn test_membership_verification_valid() {
         let master = MasterSecret::from_entropy(&[42u8; 32]);
-        let space = WitnessSpace::new(200_001, 3);
+        let space = WitnessSpace::new(3_000_001, 3);
         let id = b"alice@example.com";
         let session = b"session-2026-08-28";
 
@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_membership_verification_invalid() {
-        let space = WitnessSpace::new(200_001, 3);
+        let space = WitnessSpace::new(3_000_001, 3);
         let fake_witness = Witness {
             chain: MrsChain {
                 layers: vec![
@@ -403,7 +403,7 @@ mod tests {
     #[test]
     fn test_binding_authenticity_success() {
         let master = MasterSecret::from_entropy(&[42u8; 32]);
-        let space = WitnessSpace::new(200_001, 3);
+        let space = WitnessSpace::new(3_000_001, 3);
         let id = b"alice@example.com";
         let session = b"session-2026-08-28";
 
@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn test_binding_authenticity_wrong_identity() {
         let master = MasterSecret::from_entropy(&[42u8; 32]);
-        let space = WitnessSpace::new(200_001, 3);
+        let space = WitnessSpace::new(3_000_001, 3);
         let id = b"alice@example.com";
         let session = b"session-2026-08-28";
 
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn test_alibi_passes_membership() {
         let master = MasterSecret::from_entropy(&[42u8; 32]);
-        let space = WitnessSpace::new(200_001, 3);
+        let space = WitnessSpace::new(3_000_001, 3);
         let id = b"alice@example.com";
         let session = b"session-2026-08-28";
 
@@ -476,5 +476,4 @@ mod tests {
             auth_mean, alibi_mean
         );
     }
-    }
-                   
+}
