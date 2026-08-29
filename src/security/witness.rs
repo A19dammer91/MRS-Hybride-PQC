@@ -80,23 +80,36 @@ impl MasterSecret {
 
     /// Deterministically derive the "intended" witness for a given identity
     /// and session. This witness is the ONE that authenticates the identity.
+    ///
+    /// `sample_three_layers_ct` can legitimately return `None` for a given
+    /// seed even when `space.root_n` itself admits valid chains — the
+    /// weighted random walk through non-final layers can dead-end. A
+    /// single fixed seed gets no second chance at that point, so this
+    /// folds an attempt counter into the seed derivation and retries,
+    /// exactly like `generate_alternative_witness` already does — instead
+    /// of silently depending on every (identity, session_id) pair happening
+    /// to land on a successful draw on the very first try.
     pub fn generate_authentic_witness(
         &self,
         space: &WitnessSpace,
         identity: &[u8],
         session_id: &[u8],
     ) -> Option<Witness> {
-        let seed = Self::derive_seed(&self.key, identity, session_id);
-        let mut rng = DeterministicRng::from_seed(seed);
-        let chain = sample_three_layers_ct(space.root_n, &mut rng)?;
-        let chain_hash = hash_chain(&chain);
-        let binding_tag = Self::compute_binding_tag(&self.key, identity, session_id, &chain_hash);
-
-        Some(Witness {
-            chain,
-            binding_tag,
-            session_id: session_id.to_vec(),
-        })
+        for attempt in 0u32..256 {
+            let seed = Self::derive_seed(&self.key, identity, session_id, attempt);
+            let mut rng = DeterministicRng::from_seed(seed);
+            if let Some(chain) = sample_three_layers_ct(space.root_n, &mut rng) {
+                let chain_hash = hash_chain(&chain);
+                let binding_tag =
+                    Self::compute_binding_tag(&self.key, identity, session_id, &chain_hash);
+                return Some(Witness {
+                    chain,
+                    binding_tag,
+                    session_id: session_id.to_vec(),
+                });
+            }
+        }
+        None
     }
 
     /// Under coercion: generate an alternative witness w' ∈ W_N that is
@@ -141,13 +154,18 @@ impl MasterSecret {
         tag
     }
 
-    /// Derive a deterministic 32-byte seed from master_secret + context.
-    fn derive_seed(master_key: &[u8; 32], identity: &[u8], session_id: &[u8]) -> [u8; 32] {
+    /// Derive a deterministic 32-byte seed from master_secret + context +
+    /// attempt number. Folding `attempt` in lets `generate_authentic_witness`
+    /// retry with a fresh, still-fully-deterministic seed if a given
+    /// attempt's sample turns out invalid, without ever touching real
+    /// randomness for the "authentic" path.
+    fn derive_seed(master_key: &[u8; 32], identity: &[u8], session_id: &[u8], attempt: u32) -> [u8; 32] {
         let mut mac = HmacSha256::new_from_slice(master_key)
             .expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-SEED-v1");
         mac.update(identity);
         mac.update(session_id);
+        mac.update(&attempt.to_be_bytes());
         let result = mac.finalize().into_bytes();
         let mut seed = [0u8; 32];
         seed.copy_from_slice(&result);
@@ -454,7 +472,11 @@ mod tests {
         let mut alibi_a_sums = Vec::new();
         let mut rng = OsRng;
 
-        for i in 0..100 {
+        // 100 sessions is too small a sample for a 5% threshold on a sum
+        // of three weighted draws — sampling noise alone can exceed 5%.
+        // 2000 keeps runtime under a second while making the test
+        // actually discriminate a real bias from statistical noise.
+        for i in 0..2000 {
             let session = format!("sess-{}", i);
             let auth = master.generate_authentic_witness(&space, id, session.as_bytes()).unwrap();
             let alibi = master.generate_alternative_witness(&space, &auth, &mut rng).unwrap();
@@ -476,4 +498,5 @@ mod tests {
             auth_mean, alibi_mean
         );
     }
-}
+        }
+    
