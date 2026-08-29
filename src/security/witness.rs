@@ -11,6 +11,8 @@
 //!   indistinguishable. The adversary's advantage in detecting the
 //!   authentic witness is negligible in the security parameter.
 
+use crate::MrsChain;
+use crate::sampler::cdf_sampler::sample_three_layers_ct;
 use crate::core::diophantine::DiophantinePair;
 use rand::RngCore;
 use sha2::{Sha256, Digest};
