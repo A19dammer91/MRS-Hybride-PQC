@@ -519,7 +519,6 @@ mod tests {
         let mut alibi_a_sums = Vec::new();
         let mut rng = OsRng;
 
-        // Use fewer iterations for faster tests, but enough for statistical significance
         let num_samples = 500;
         let mut success_count = 0;
 
@@ -538,7 +537,6 @@ mod tests {
             }
         }
 
-        // Skip test if we couldn't generate enough samples
         if success_count < 10 {
             eprintln!("[WARN] Only {} successful samples generated, skipping statistical test", success_count);
             return;
@@ -548,7 +546,6 @@ mod tests {
         let alibi_mean = alibi_a_sums.iter().sum::<u64>() as f64 / alibi_a_sums.len() as f64;
         let diff_pct = (auth_mean - alibi_mean).abs() / auth_mean;
 
-        // Relaxed threshold for CI environments
         assert!(
             diff_pct < 0.10,
             "Authentic and alibi witnesses are statistically distinguishable: auth_mean={}, alibi_mean={}, diff={:.2}%",
@@ -558,7 +555,6 @@ mod tests {
 
     #[test]
     fn test_witness_generation_retries() {
-        // Test that the retry mechanism works without panicking
         let master = MasterSecret::from_entropy(&[42u8; 32]);
         let root_n = find_working_root_n();
         let space = WitnessSpace::new(root_n, 3);
@@ -568,14 +564,12 @@ mod tests {
             let session = format!("retry-test-{}", i);
             let result = master.generate_authentic_witness(&space, id, session.as_bytes());
             
-            // It's okay if some fail, but they should not panic
             if let Some(witness) = result {
                 assert!(witness.chain.valid);
                 assert_eq!(witness.chain.layers.len(), 3);
             }
         }
         
-        // If we got here, no panics occurred
         println!("[INFO] Retry test passed without panics");
     }
-        }
+}
