@@ -189,7 +189,7 @@ fn uniform_below_u128_ct(bound: u128, rng: &mut impl RngCore) -> u128 {
 fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
     let mut ans: u128 = 0;
     let mut n = n as u128;
-    let mut m = m as u128;
+    let mut m = (m as u128).max(1); // Defensive: guard against m=0 on entry
     let mut a = a as u128;
     let mut b = b as u128;
     let mut done = Choice::from(0);
@@ -216,7 +216,9 @@ fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
         let new_b = y_max % m;
 
         // Swap m and a only while still running; frozen state keeps m != 0.
-        let advance = !done;
+        // FIX: also freeze when terminating this iteration, matching the
+        // original recursive algorithm which does NOT recurse/swap on termination.
+        let advance = !done & !terminates_now;
         let (new_m, new_a) = (ct_select_u128(m, a, advance), ct_select_u128(a, m, advance));
         m = new_m;
         a = new_a;
@@ -642,4 +644,5 @@ mod tests {
         let result = sample_three_layers_ct(root_n, &mut rng);
         let _ = result;
     }
-                        }
+}
+
