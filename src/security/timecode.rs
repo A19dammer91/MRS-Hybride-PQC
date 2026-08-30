@@ -1,13 +1,13 @@
 //! Temporal Barrier and Security Games matching the formal EasyCrypt
 //! specifications from `MRS_AUTH_.ec`.
 
-use std::collections::HashSet;
-use std::cell::RefCell;
-use std::time::{Instant, Duration};
-use rand::RngCore;
-use zeroize::Zeroize;
-use sha2::Sha256;
 use hmac::Mac;
+use rand::RngCore;
+use sha2::Sha256;
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
+use zeroize::Zeroize;
 
 type HmacSha256 = hmac::Hmac<Sha256>;
 
@@ -43,17 +43,17 @@ where
     T: Zeroize,
 {
     let start_time = Instant::now();
-    
+
     // Execute the core cryptographic computation
     let mut secret_result = f();
-    
+
     let duration = start_time.elapsed();
 
     // Hardware-enforced side-channel timing check
     if duration > timeout {
         // TIMEOUT TRIGGERED: Purge registers from RAM immediately
         secret_result.zeroize();
-        return None; 
+        return None;
     }
 
     Some(secret_result)
@@ -99,21 +99,21 @@ pub trait ForwardSecrecyAdversary {
 
 /// Forward Secrecy Security Game. Returns true if the attacker breaks indistinguishability.
 pub fn run_forward_secrecy_game(
-    adversary: &dyn ForwardSecrecyAdversary, 
-    secret_anchor: &[u8], 
+    adversary: &dyn ForwardSecrecyAdversary,
+    secret_anchor: &[u8],
     current_t: u64,
-    rng: &mut impl RngCore
+    rng: &mut impl RngCore,
 ) -> bool {
     let current_code = generate_timecode(secret_anchor, current_t).unwrap().value;
     let t_prime = adversary.choose(&current_code, current_t);
-    
+
     if t_prime >= current_t {
         return false; // Invalid attack bounds
     }
 
-    let b_choice = (rng.next_u32() % 2) == 1; 
+    let b_choice = (rng.next_u32() % 2) == 1;
     let mut challenge = [0u8; 32];
-    
+
     if b_choice {
         rng.fill_bytes(&mut challenge);
     } else {
@@ -138,11 +138,11 @@ mod security_tests {
         fn attack(&self, sign_oracle: &dyn Fn(u64) -> [u8; 32]) -> (u64, [u8; 32]) {
             // Attacker queries a legitimate token for baseline observation (e.g., t = 5)
             let _leaked_code = sign_oracle(5);
-            
+
             // Attacker attempts to forge a token for an un-queried timestamp (t = 999)
             let target_t = 999;
             let forged_signature = [0u8; 32]; // Blind static dummy bytes submission
-            
+
             (target_t, forged_signature)
         }
     }
@@ -166,11 +166,10 @@ mod security_tests {
     fn test_temporal_barrier_success() {
         let timeout = Duration::from_millis(50);
         let secret_anchor = b"super-secret-key-material-32bytes";
-        
-        let res = run_with_temporal_barrier(timeout, || {
-            generate_timecode(secret_anchor, 1000).unwrap()
-        });
-        
+
+        let res =
+            run_with_temporal_barrier(timeout, || generate_timecode(secret_anchor, 1000).unwrap());
+
         assert!(res.is_some());
     }
 
@@ -178,12 +177,12 @@ mod security_tests {
     fn test_temporal_barrier_timeout_triggers_zeroize() {
         let timeout = Duration::from_nanos(1); // Force immediate timeout bounds
         let secret_anchor = b"super-secret-key-material-32bytes";
-        
+
         let res = run_with_temporal_barrier(timeout, || {
             std::thread::sleep(Duration::from_millis(2));
             generate_timecode(secret_anchor, 1000).unwrap()
         });
-        
+
         assert!(res.is_none());
     }
 
@@ -191,10 +190,13 @@ mod security_tests {
     fn test_euf_cma_game_blocks_blind_forgery() {
         let secret_anchor = b"cryptographic-seed-material-test";
         let attacker = BlindForger;
-        
+
         // Attacker must fail to forge because guessing the HMAC-SHA256 space is computationally infeasible
         let attacker_won = run_euf_cma_game(&attacker, secret_anchor);
-        assert!(!attacker_won, "Active blind manipulation should be completely rejected");
+        assert!(
+            !attacker_won,
+            "Active blind manipulation should be completely rejected"
+        );
     }
 
     #[test]
@@ -214,6 +216,9 @@ mod security_tests {
         }
 
         // Win rate must fall inside a normal binomial distribution around 50% chance
-        assert!(wins > 30 && wins < 70, "Attacker success advantage must remain at baseline random guess limits");
+        assert!(
+            wins > 30 && wins < 70,
+            "Attacker success advantage must remain at baseline random guess limits"
+        );
     }
 }

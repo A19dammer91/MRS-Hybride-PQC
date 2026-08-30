@@ -20,7 +20,9 @@
 use pqc_kyber::{decapsulate, encapsulate, keypair, KyberError};
 use rand::thread_rng;
 
-use crate::crypto::{decrypt_payload_hybrid, derive_hybrid_key, encrypt_payload_hybrid, HybridCiphertextPacket};
+use crate::crypto::{
+    decrypt_payload_hybrid, derive_hybrid_key, encrypt_payload_hybrid, HybridCiphertextPacket,
+};
 use crate::sampler::{sample_three_layers, MrsChain};
 
 /// A Kyber1024 keypair.
@@ -100,9 +102,10 @@ impl MrsAuthFramework {
         let (kyber_ciphertext, shared_secret) = encapsulate(public_key, &mut rng)?;
 
         let root_n = derive_session_root(session_id);
-        
+
         // GECORRIGEERD: Voeg &mut rng toe als tweede argument voor de u64 sampler engine
-        let mrs_chain = sample_three_layers(root_n, &mut rng).ok_or(FrameworkError::ChainSamplingFailed)?;
+        let mrs_chain =
+            sample_three_layers(root_n, &mut rng).ok_or(FrameworkError::ChainSamplingFailed)?;
 
         let hybrid_key = derive_hybrid_key(&shared_secret, &mrs_chain, session_id)
             .map_err(FrameworkError::Crypto)?;
@@ -158,23 +161,13 @@ mod tests {
         let aad = b"envelope-header";
         let plaintext = b"a message that survives the round trip";
 
-        let envelope = MrsAuthFramework::full_encrypt(
-            &keypair.public_key,
-            session_id,
-            &nonce,
-            aad,
-            plaintext,
-        )
-        .expect("encryption should succeed");
+        let envelope =
+            MrsAuthFramework::full_encrypt(&keypair.public_key, session_id, &nonce, aad, plaintext)
+                .expect("encryption should succeed");
 
-        let recovered = MrsAuthFramework::full_decrypt(
-            &keypair.secret_key,
-            &envelope,
-            session_id,
-            &nonce,
-            aad,
-        )
-        .expect("decryption should succeed");
+        let recovered =
+            MrsAuthFramework::full_decrypt(&keypair.secret_key, &envelope, session_id, &nonce, aad)
+                .expect("decryption should succeed");
 
         assert_eq!(plaintext.to_vec(), recovered);
     }

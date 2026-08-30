@@ -19,9 +19,11 @@
 //! - All per-layer work is O(log n) but runs in a fixed number of
 //!   iterations regardless of input, so it takes constant time.
 
-use crate::core::diophantine::{DiophantinePair, digital_root, validate_triangle_condition};
+use crate::core::diophantine::{digital_root, validate_triangle_condition, DiophantinePair};
 use rand::RngCore;
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess};
+use subtle::{
+    Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess,
+};
 use zeroize::Zeroize;
 
 // A complete 3-layer witness chain.
@@ -233,10 +235,7 @@ fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
         // the iteration that terminates, matching the original recursive
         // algorithm, which does not recurse/swap once it terminates.
         let advance = !done & !terminates_now;
-        let (new_m, new_a) = (
-            ct_select_u128(m, a, advance),
-            ct_select_u128(a, m, advance),
-        );
+        let (new_m, new_a) = (ct_select_u128(m, a, advance), ct_select_u128(a, m, advance));
         m = new_m;
         a = new_a;
         n = ct_select_u128(n, new_n, advance);
@@ -275,7 +274,13 @@ impl LayerParams {
         let valid = valid & has_candidates;
 
         let t_max = k_max.wrapping_sub(k0) / 9;
-        Self { a0, b0, k0, t_max, valid }
+        Self {
+            a0,
+            b0,
+            k0,
+            t_max,
+            valid,
+        }
     }
 
     // Computes A(t) = a0 + 9*k, where k = k0 + 9*t.
@@ -323,10 +328,10 @@ fn weight_params_ct(params: &LayerParams) -> (u64, u64, Choice) {
 
     // Calculate a safe difference that won't wrap to u64::MAX
     let safe_diff = u64::conditional_select(&0, &a_val.wrapping_sub(threshold), a_val_ge_threshold);
-    
+
     // Perform the division safely; if invalid, this becomes 0 / 9 = 0
     let b0_val_raw = safe_diff / 9;
-    
+
     // Force b0_val to 0 if a_val was invalid to prevent massive values
     let b0_val = u64::conditional_select(&0, &b0_val_raw, a_val_ge_threshold);
 
@@ -341,14 +346,15 @@ fn weight_params_ct(params: &LayerParams) -> (u64, u64, Choice) {
     let t_filter = t_skip.wrapping_add(t_filter_eff);
 
     // This chain will now succeed because b0_val contains safe, valid parameters
-    let e_prime_raw = 9u64.checked_mul(t_filter)
+    let e_prime_raw = 9u64
+        .checked_mul(t_filter)
         .and_then(|v| v.checked_add(b0_val))
         .and_then(|v| v.checked_sub(19 * c3))
         .unwrap_or(0);
 
     let e_prime_valid = e_prime_raw.ct_ge(&171);
     let t_filter_ok = t_filter.ct_le(&params.t_max);
-    
+
     // Genuine constraints now correctly dictate layer validity
     let valid = params.valid & e_prime_valid & t_filter_ok & a_val_ge_threshold;
 
@@ -397,7 +403,7 @@ fn verify_chain_validity(chain: &MrsChain, root_n: u64) -> bool {
     if !chain.valid || chain.layers.len() != 3 {
         return false;
     }
-    
+
     // Check descent property
     if root_n <= chain.layers[0].a {
         return false;
@@ -408,7 +414,7 @@ fn verify_chain_validity(chain: &MrsChain, root_n: u64) -> bool {
     if chain.layers[1].a <= chain.layers[2].a {
         return false;
     }
-    
+
     // Verify triangle condition for each layer.
     // FIX: `validate_triangle_condition(b: u64, x: u64)` expects the B-value
     // first and the anchor value second (dr(B) == dr(2*dr(X))). This used to
@@ -424,7 +430,7 @@ fn verify_chain_validity(chain: &MrsChain, root_n: u64) -> bool {
             return false;
         }
     }
-    
+
     true
 }
 
@@ -433,17 +439,17 @@ fn verify_chain_validity(chain: &MrsChain, root_n: u64) -> bool {
 // ============================================================================
 
 /// Samples a 3-layer witness chain in constant time with retries.
-/// 
+///
 /// # Parameters
 /// - `root_n`: the root value to sample from
 /// - `rng`: cryptographically secure RNG
 /// - `max_attempts`: maximum number of sampling attempts
-/// 
+///
 /// # Returns
 /// - `Some(MrsChain)` if a valid chain is found
 /// - `None` if no valid chain exists after all attempts
 pub fn sample_three_layers_ct_with_retries(
-    root_n: u64, 
+    root_n: u64,
     rng: &mut impl RngCore,
     max_attempts: usize,
 ) -> Option<MrsChain> {
@@ -462,14 +468,16 @@ pub fn sample_three_layers_ct_with_retries(
                 return Some(chain);
             }
         }
-        
+
         #[cfg(test)]
         if _attempt == max_attempts - 1 {
-            eprintln!("[DEBUG] Failed to sample chain for root_n={} after {} attempts", 
-                     root_n, max_attempts);
+            eprintln!(
+                "[DEBUG] Failed to sample chain for root_n={} after {} attempts",
+                root_n, max_attempts
+            );
         }
     }
-    
+
     None
 }
 
@@ -600,7 +608,10 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
     }
 
     if overall_valid.unwrap_u8() == 1 {
-        Some(MrsChain { layers: chain, valid: true })
+        Some(MrsChain {
+            layers: chain,
+            valid: true,
+        })
     } else {
         None
     }
@@ -633,41 +644,53 @@ pub fn debug_weight_params_ct(params: &LayerParams) -> (u64, u64, Choice, String
     let diff = u64::conditional_select(&0, &threshold.wrapping_sub(a0_val), underflow);
     let t_skip = (diff + 80) / 81;
     let a_val = params.a_at_ct(t_skip);
-    
+
     let a_val_ge_threshold = a_val.ct_ge(&threshold);
     let safe_diff = u64::conditional_select(&0, &a_val.wrapping_sub(threshold), a_val_ge_threshold);
     let b0_val_raw = safe_diff / 9;
     let b0_val = u64::conditional_select(&0, &b0_val_raw, a_val_ge_threshold);
-    
+
     let target = digital_root(2 * dr_a);
     let c3 = b0_val.wrapping_add(9).wrapping_sub(target) % 9;
-    
+
     let b0_ge = b0_val.ct_ge(&(19 * c3 + 171));
     let need = 171u64.saturating_add(19 * c3).saturating_sub(b0_val);
     let t_filter_raw = (need + 8) / 9;
     let t_filter_eff = u64::conditional_select(&t_filter_raw, &0, b0_ge);
     let t_filter = t_skip.wrapping_add(t_filter_eff);
-    
-    let e_prime_raw = 9u64.checked_mul(t_filter)
+
+    let e_prime_raw = 9u64
+        .checked_mul(t_filter)
         .and_then(|v| v.checked_add(b0_val))
         .and_then(|v| v.checked_sub(19 * c3))
         .unwrap_or(0);
-    
+
     let e_prime_valid = e_prime_raw.ct_ge(&171);
     let t_filter_ok = t_filter.ct_le(&params.t_max);
     let valid = params.valid & e_prime_valid & t_filter_ok & a_val_ge_threshold;
-    
+
     let debug_info = format!(
         "a0_val={}, dr_a={}, threshold={}, underflow={}, t_skip={}, a_val={}, \
          a_val_ge_threshold={}, b0_val={}, c3={}, b0_ge={}, t_filter={}, e_prime_raw={}, \
          e_prime_valid={}, t_filter_ok={}, params.valid={}, final_valid={}",
-        a0_val, dr_a, threshold, underflow.unwrap_u8(), t_skip, a_val,
-        a_val_ge_threshold.unwrap_u8(), b0_val, c3, b0_ge.unwrap_u8(), 
-        t_filter, e_prime_raw,
-        e_prime_valid.unwrap_u8(), t_filter_ok.unwrap_u8(), 
-        params.valid.unwrap_u8(), valid.unwrap_u8()
+        a0_val,
+        dr_a,
+        threshold,
+        underflow.unwrap_u8(),
+        t_skip,
+        a_val,
+        a_val_ge_threshold.unwrap_u8(),
+        b0_val,
+        c3,
+        b0_ge.unwrap_u8(),
+        t_filter,
+        e_prime_raw,
+        e_prime_valid.unwrap_u8(),
+        t_filter_ok.unwrap_u8(),
+        params.valid.unwrap_u8(),
+        valid.unwrap_u8()
     );
-    
+
     (t_filter, e_prime_raw, valid, debug_info)
 }
 
@@ -699,17 +722,20 @@ mod tests {
     fn test_three_layer_sampler_success() {
         let root_n = 3_000_001;
         let mut rng = OsRng;
-        
+
         // Use the safe version with retries
         let result = sample_three_layers_safe(root_n, &mut rng);
-        
+
         // Don't assert that it must succeed - some root_n may not have chains
         if let Some(chain) = result {
             assert!(chain.valid);
             assert_eq!(chain.layers.len(), 3);
             assert!(root_n > chain.layers[0].a);
         } else {
-            println!("[INFO] No chain found for root_n={} - this may be expected", root_n);
+            println!(
+                "[INFO] No chain found for root_n={} - this may be expected",
+                root_n
+            );
         }
     }
 
@@ -719,7 +745,8 @@ mod tests {
             assert_eq!(
                 count_triangle_filtered_closed_form(n),
                 count_triangle_filtered_bruteforce(n),
-                "count mismatch at n={}", n
+                "count mismatch at n={}",
+                n
             );
         }
     }
@@ -728,43 +755,45 @@ mod tests {
     fn ct_sampler_produces_valid_chains() {
         // Test values - some may have chains, some may not
         let test_values = [
-            3_000_001u64, 
-            3_500_007, 
-            4_200_013, 
+            3_000_001u64,
+            3_500_007,
+            4_200_013,
             10_000_001,
             50_000_000,
             100_000_001,
         ];
-        
+
         let mut rng = OsRng;
         let mut found_any = false;
         let mut results = Vec::new();
-        
+
         for &root_n in &test_values {
             // Try up to 20 attempts per root_n with 5 retries each
             let mut chain_found = false;
-            
+
             for attempt in 0..20 {
                 match sample_three_layers_ct_with_retries(root_n, &mut rng, 5) {
                     Some(chain) => {
                         chain_found = true;
                         found_any = true;
-                        
+
                         // Verify properties
                         assert_eq!(chain.layers.len(), 3);
                         assert!(root_n > chain.layers[0].a);
                         assert!(chain.layers[0].a > chain.layers[1].a);
                         assert!(chain.layers[1].a > chain.layers[2].a);
-                        
+
                         for pair in &chain.layers {
                             // FIX: validate_triangle_condition(b, x) expects
                             // the B-value first, the anchor value second.
                             assert!(
                                 validate_triangle_condition(pair.b, pair.a).unwrap_u8() == 1,
-                                "Triangle condition failed for ({}, {})", pair.a, pair.b
+                                "Triangle condition failed for ({}, {})",
+                                pair.a,
+                                pair.b
                             );
                         }
-                        
+
                         results.push((root_n, true));
                         break; // Success, move to next root_n
                     }
@@ -777,17 +806,20 @@ mod tests {
                     }
                 }
             }
-            
+
             if !chain_found {
                 eprintln!("[WARN] Could not sample any chain for root_n={}", root_n);
             }
         }
-        
+
         // Report results but don't fail if some values produce no chains
         println!("[INFO] Sampling results: {:?}", results);
-        
+
         // At least one test value should produce a chain
-        assert!(found_any, "No chains found for any test value - sampler may be broken");
+        assert!(
+            found_any,
+            "No chains found for any test value - sampler may be broken"
+        );
     }
 
     #[test]
@@ -796,12 +828,17 @@ mod tests {
         let root_n = 3_000_001;
         let params = LayerParams::new_ct(root_n);
         let (t_filter, e_prime, valid, debug_info) = debug_weight_params_ct(&params);
-        
+
         println!("[DEBUG] root_n={}", root_n);
         println!("[DEBUG] params.valid={}", params.valid.unwrap_u8());
-        println!("[DEBUG] t_filter={}, e_prime={}, valid={}", t_filter, e_prime, valid.unwrap_u8());
+        println!(
+            "[DEBUG] t_filter={}, e_prime={}, valid={}",
+            t_filter,
+            e_prime,
+            valid.unwrap_u8()
+        );
         println!("[DEBUG] {}", debug_info);
-        
+
         // This is informational, not a hard assert
         assert!(true);
     }
@@ -810,7 +847,7 @@ mod tests {
     fn test_sampler_retries() {
         let root_n = 3_000_001;
         let mut rng = OsRng;
-        
+
         // Test that retries work without panicking
         for _ in 0..10 {
             let result = sample_three_layers_ct_with_retries(root_n, &mut rng, 3);
@@ -823,7 +860,7 @@ mod tests {
                 assert!(root_n > chain.layers[0].a);
             }
         }
-        
+
         // If we got here, no panics occurred
         println!("[INFO] Retry test passed without panics");
     }

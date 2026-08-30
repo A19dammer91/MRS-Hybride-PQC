@@ -12,11 +12,11 @@
 //! authentic witness is negligible in the security parameter.
 
 use crate::sampler::{sample_three_layers_safe, MrsChain};
+use hmac::{Hmac, Mac};
 use rand::RngCore;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use subtle::{Choice, ConstantTimeEq};
 use zeroize::{Zeroize, ZeroizeOnDrop};
-use hmac::{Hmac, Mac};
 
 /// Type alias for the HMAC primitive used in witness binding.
 type HmacSha256 = Hmac<Sha256>;
@@ -92,13 +92,13 @@ impl MasterSecret {
         for attempt in 0u32..512 {
             let seed = Self::derive_seed(&self.key, identity, session_id, attempt);
             let mut rng = DeterministicRng::from_seed(seed);
-            
+
             // Use the safe sampler with retries
             if let Some(chain) = sample_three_layers_safe(space.root_n, &mut rng) {
                 let chain_hash = hash_chain(&chain);
                 let binding_tag =
                     Self::compute_binding_tag(&self.key, identity, session_id, &chain_hash);
-                
+
                 // Verify the chain is actually valid before returning
                 if space.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound {
                     return Some(Witness {
@@ -109,11 +109,13 @@ impl MasterSecret {
                 }
             }
         }
-        
+
         #[cfg(test)]
-        eprintln!("[WARN] Failed to generate authentic witness for root_n={} after 512 attempts", 
-                 space.root_n);
-        
+        eprintln!(
+            "[WARN] Failed to generate authentic witness for root_n={} after 512 attempts",
+            space.root_n
+        );
+
         None
     }
 
@@ -139,14 +141,14 @@ impl MasterSecret {
                     }
                 }
             }
-            
+
             // Refresh RNG state for next attempt
             let _ = rng.next_u64();
         }
-        
+
         #[cfg(test)]
         eprintln!("[WARN] Failed to generate alternative witness after 512 attempts");
-        
+
         None
     }
 
@@ -157,8 +159,7 @@ impl MasterSecret {
         session_id: &[u8],
         chain_hash: &[u8; 32],
     ) -> [u8; 32] {
-        let mut mac = HmacSha256::new_from_slice(master_key)
-            .expect("HMAC key length is valid");
+        let mut mac = HmacSha256::new_from_slice(master_key).expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-BIND-v1");
         mac.update(identity);
         mac.update(session_id);
@@ -174,9 +175,13 @@ impl MasterSecret {
     /// retry with a fresh, still-fully-deterministic seed if a given
     /// attempt's sample turns out invalid, without ever touching real
     /// randomness for the "authentic" path.
-    fn derive_seed(master_key: &[u8; 32], identity: &[u8], session_id: &[u8], attempt: u32) -> [u8; 32] {
-        let mut mac = HmacSha256::new_from_slice(master_key)
-            .expect("HMAC key length is valid");
+    fn derive_seed(
+        master_key: &[u8; 32],
+        identity: &[u8],
+        session_id: &[u8],
+        attempt: u32,
+    ) -> [u8; 32] {
+        let mut mac = HmacSha256::new_from_slice(master_key).expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-SEED-v1");
         mac.update(identity);
         mac.update(session_id);
@@ -205,7 +210,9 @@ impl WitnessSpace {
 
         let mut current_n = self.root_n;
         for pair in &chain.layers {
-            let lhs = 19u64.wrapping_mul(pair.a).wrapping_add(9u64.wrapping_mul(pair.b));
+            let lhs = 19u64
+                .wrapping_mul(pair.a)
+                .wrapping_add(9u64.wrapping_mul(pair.b));
             if lhs != current_n {
                 return WitnessStatus::Invalid;
             }
@@ -377,11 +384,11 @@ fn generate_test_witness() -> (MasterSecret, WitnessSpace, Witness) {
     let space = WitnessSpace::new(root_n, 3);
     let id = b"alice@example.com";
     let session = b"test-session";
-    
+
     let witness = master
         .generate_authentic_witness(&space, id, session)
         .expect("Failed to generate test witness - no valid chains found for any root_n");
-    
+
     (master, space, witness)
 }
 
@@ -403,9 +410,11 @@ mod tests {
         let id = b"alice@example.com";
         let session = b"session-2026-08-28";
 
-        let w1 = master.generate_authentic_witness(&space, id, session)
+        let w1 = master
+            .generate_authentic_witness(&space, id, session)
             .expect("Failed to generate witness #1");
-        let w2 = master.generate_authentic_witness(&space, id, session)
+        let w2 = master
+            .generate_authentic_witness(&space, id, session)
             .expect("Failed to generate witness #2");
 
         assert!(chains_equal_ct(&w1.chain, &w2.chain).unwrap_u8() == 1);
@@ -419,9 +428,11 @@ mod tests {
         let space = WitnessSpace::new(root_n, 3);
         let id = b"alice@example.com";
 
-        let w1 = master.generate_authentic_witness(&space, id, b"sess-1")
+        let w1 = master
+            .generate_authentic_witness(&space, id, b"sess-1")
             .expect("Failed to generate witness for sess-1");
-        let w2 = master.generate_authentic_witness(&space, id, b"sess-2")
+        let w2 = master
+            .generate_authentic_witness(&space, id, b"sess-2")
             .expect("Failed to generate witness for sess-2");
 
         assert!(chains_equal_ct(&w1.chain, &w2.chain).unwrap_u8() == 0);
@@ -435,10 +446,12 @@ mod tests {
         let id = b"alice@example.com";
         let session = b"session-2026-08-28";
 
-        let authentic = master.generate_authentic_witness(&space, id, session)
+        let authentic = master
+            .generate_authentic_witness(&space, id, session)
             .expect("Failed to generate authentic witness");
         let mut rng = OsRng;
-        let alibi = master.generate_alternative_witness(&space, &authentic, &mut rng)
+        let alibi = master
+            .generate_alternative_witness(&space, &authentic, &mut rng)
             .expect("Failed to generate alternative witness");
 
         assert!(chains_equal_ct(&authentic.chain, &alibi.chain).unwrap_u8() == 0);
@@ -495,10 +508,12 @@ mod tests {
         let id = b"alice@example.com";
         let session = b"session-2026-08-28";
 
-        let authentic = master.generate_authentic_witness(&space, id, session)
+        let authentic = master
+            .generate_authentic_witness(&space, id, session)
             .expect("Failed to generate authentic witness");
         let mut rng = OsRng;
-        let alibi = master.generate_alternative_witness(&space, &authentic, &mut rng)
+        let alibi = master
+            .generate_alternative_witness(&space, &authentic, &mut rng)
             .expect("Failed to generate alternative witness");
 
         let status = space.verify_membership(&alibi);
@@ -524,12 +539,12 @@ mod tests {
 
         for i in 0..num_samples {
             let session = format!("sess-{}", i);
-            
+
             if let Some(auth) = master.generate_authentic_witness(&space, id, session.as_bytes()) {
                 if let Some(alibi) = master.generate_alternative_witness(&space, &auth, &mut rng) {
                     let auth_sum: u64 = auth.chain.layers.iter().map(|p| p.a).sum();
                     let alibi_sum: u64 = alibi.chain.layers.iter().map(|p| p.a).sum();
-                    
+
                     authentic_a_sums.push(auth_sum);
                     alibi_a_sums.push(alibi_sum);
                     success_count += 1;
@@ -538,7 +553,10 @@ mod tests {
         }
 
         if success_count < 10 {
-            eprintln!("[WARN] Only {} successful samples generated, skipping statistical test", success_count);
+            eprintln!(
+                "[WARN] Only {} successful samples generated, skipping statistical test",
+                success_count
+            );
             return;
         }
 
@@ -559,17 +577,17 @@ mod tests {
         let root_n = find_working_root_n();
         let space = WitnessSpace::new(root_n, 3);
         let id = b"test@example.com";
-        
+
         for i in 0..10 {
             let session = format!("retry-test-{}", i);
             let result = master.generate_authentic_witness(&space, id, session.as_bytes());
-            
+
             if let Some(witness) = result {
                 assert!(witness.chain.valid);
                 assert_eq!(witness.chain.layers.len(), 3);
             }
         }
-        
+
         println!("[INFO] Retry test passed without panics");
     }
 }

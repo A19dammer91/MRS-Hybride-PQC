@@ -1,4 +1,4 @@
-use subtle::{Choice, ConstantTimeEq, ConditionallySelectable};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use zeroize::Zeroize;
 
 /// Struct representing a single representation (A, B) at one layer
@@ -74,7 +74,7 @@ pub fn generate_representation_family(n: u64) -> Vec<DiophantinePair> {
     for k in 0..r_n {
         let a = a_0 + (9 * k);
         let b = (n - (19 * a)) / 9;
-        
+
         if validate_triangle_condition(b, n).unwrap_u8() == 1 {
             family.push(DiophantinePair { a, b });
         }

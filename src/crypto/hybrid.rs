@@ -2,12 +2,12 @@
 //! key derivation and authenticated encryption via AES-256-GCM.
 
 use crate::sampler::MrsChain;
-use pqc_kyber::KYBER_SSBYTES;
-use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use hmac::Mac;
+use pqc_kyber::KYBER_SSBYTES;
 use sha2::Sha256;
 use zeroize::Zeroize;
-use hmac::Mac;
 
 type HkdfMac = hmac::Hmac<Sha256>;
 
@@ -23,7 +23,7 @@ pub struct HybridCiphertextPacket {
 pub fn derive_hybrid_key(
     kyber_ss: &[u8; KYBER_SSBYTES],
     mrs_chain: &MrsChain,
-    session_id: &[u8]
+    session_id: &[u8],
 ) -> Result<[u8; 32], &'static str> {
     // 1. Serialize the full 3-layer Diophantine chain path seamlessly into bytes
     let mut mrs_bytes = Vec::with_capacity(mrs_chain.layers.len() * 16);
@@ -42,8 +42,8 @@ pub fn derive_hybrid_key(
 
     // 3. HKDF-Expand Phase: Expand into the final 256-bit key using localized context
     let info = b"MRS-AUTH Hybrid Coupling v1";
-    let mut expand = <HkdfMac as Mac>::new_from_slice(&prk)
-        .map_err(|_| "HKDF-Expand initialization error")?;
+    let mut expand =
+        <HkdfMac as Mac>::new_from_slice(&prk).map_err(|_| "HKDF-Expand initialization error")?;
 
     <HkdfMac as Mac>::update(&mut expand, info);
     <HkdfMac as Mac>::update(&mut expand, &[1u8]); // Enforce RFC 5869 single-block constant counter
@@ -63,16 +63,21 @@ pub fn encrypt_payload_hybrid(
     key_bytes: &[u8; 32],
     nonce_bytes: &[u8; 12],
     plaintext: &[u8],
-    associated_data: &[u8]
+    associated_data: &[u8],
 ) -> Result<Vec<u8>, &'static str> {
     let key = Key::<Aes256Gcm>::from_slice(key_bytes);
     let cipher = Aes256Gcm::new(key);
     let nonce = Nonce::from_slice(nonce_bytes);
 
-    let payload = cipher.encrypt(nonce, aes_gcm::aead::Payload {
-        msg: plaintext,
-        aad: associated_data,
-    }).map_err(|_| "AES-GCM encryption failed")?;
+    let payload = cipher
+        .encrypt(
+            nonce,
+            aes_gcm::aead::Payload {
+                msg: plaintext,
+                aad: associated_data,
+            },
+        )
+        .map_err(|_| "AES-GCM encryption failed")?;
 
     Ok(payload)
 }
@@ -82,16 +87,21 @@ pub fn decrypt_payload_hybrid(
     key_bytes: &[u8; 32],
     nonce_bytes: &[u8; 12],
     ciphertext: &[u8],
-    associated_data: &[u8]
+    associated_data: &[u8],
 ) -> Result<Vec<u8>, &'static str> {
     let key = Key::<Aes256Gcm>::from_slice(key_bytes);
     let cipher = Aes256Gcm::new(key);
     let nonce = Nonce::from_slice(nonce_bytes);
 
-    let plaintext = cipher.decrypt(nonce, aes_gcm::aead::Payload {
-        msg: ciphertext,
-        aad: associated_data,
-    }).map_err(|_| "AES-GCM decryption failed (integrity check failed)")?;
+    let plaintext = cipher
+        .decrypt(
+            nonce,
+            aes_gcm::aead::Payload {
+                msg: ciphertext,
+                aad: associated_data,
+            },
+        )
+        .map_err(|_| "AES-GCM decryption failed (integrity check failed)")?;
 
     Ok(plaintext)
 }

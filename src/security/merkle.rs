@@ -1,7 +1,7 @@
-use sha2::{Sha256, Digest};
-use subtle::{ConstantTimeEq, Choice};
-use zeroize::Zeroize;
 use crate::sampler::MrsChain;
+use sha2::{Digest, Sha256};
+use subtle::{Choice, ConstantTimeEq};
+use zeroize::Zeroize;
 
 /// Merkle inclusion proof for a selected alibi chain.
 #[derive(Debug, Clone, Zeroize)]
