@@ -20,7 +20,7 @@
 
 use crate::sampler::{sample_three_layers_safe, MrsChain};
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
+    aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
 use argon2::{Argon2, Params as Argon2Params};
@@ -43,7 +43,7 @@ type HmacSha256 = Hmac<Sha256>;
 
 /// A witness is a mathematically valid MRS Diophantine chain plus a
 /// cryptographic binding tag that links it (optionally) to an identity.
-#[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
+#[derive(Debug, Clone, PartialEq, Zeroize, ZeroizeOnDrop)]
 pub struct Witness {
     /// The underlying MRS Diophantine chain (public or private components).
     pub chain: MrsChain,
@@ -68,11 +68,11 @@ pub struct MasterSecret {
 }
 
 /// Encapsulated 32-byte key. Never public.
-#[derive(Clone, Zeroize, ZeroizeOnDrop)]
+#[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
 struct ProtectedKey([u8; 32]);
 
 /// Operational mode of the master secret.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub enum SecretMode {
     /// Real identity, used for authentication.
     Authentic,
@@ -209,7 +209,7 @@ impl MasterSecret {
         // Step 3: Mode-dependent domain separation
         let domain = match config.mode {
             SecretMode::Authentic => b"MRS-AUTH-MASTER-v1-AUTHENTIC",
-            SecretMode::Duress => b"MRS-AUTH-MASTER-v1-DURESS",
+            SecretMode::Duress => b"MRS-AUTH-MASTER-v1-DURESS-X",
         };
 
         let hkdf = Hkdf::<Sha256>::new(Some(&input.salt), &combined);
@@ -360,7 +360,8 @@ impl MasterSecret {
         session_id: &[u8],
         chain_hash: &[u8; 32],
     ) -> [u8; 32] {
-        let mut mac = HmacSha256::new_from_slice(master_key).expect("HMAC key length is valid");
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(master_key)
+            .expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-BIND-v1");
         mac.update(&(identity.len() as u32).to_be_bytes());
         mac.update(identity);
@@ -381,7 +382,8 @@ impl MasterSecret {
         session_id: &[u8],
         attempt: u32,
     ) -> [u8; 32] {
-        let mut mac = HmacSha256::new_from_slice(master_key).expect("HMAC key length is valid");
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(master_key)
+            .expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-SEED-v1");
         mac.update(&(identity.len() as u32).to_be_bytes());
         mac.update(identity);
@@ -714,7 +716,7 @@ mod tests {
 
     #[test]
     fn test_alternative_witness_differs_from_authentic() {
-        let (master, space, authentic) = generate_test_witness();
+        let (_master, space, authentic) = generate_test_witness();
         let mut rng = OsRng;
         let alibi = space
             .generate_alternative_witness(&authentic, &mut rng)
@@ -1070,4 +1072,4 @@ mod tests {
             WitnessStatus::BindingMismatch
         );
     }
-}
+    }
