@@ -1,12 +1,5 @@
 <div align="center">
 
-[![CI](https://github.com/A19dammer91/MRS-Hybride-PQC/actions/workflows/ci.yml/badge.svg)](https://github.com/A19dammer91/MRS-Hybride-PQC/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/github/actions/workflow/status/A19dammer91/MRS-Hybride-PQC/ci.yml?label=tests&style=flat-square&logo=githubactions&logoColor=white)](https://github.com/A19dammer91/MRS-Hybride-PQC/actions/workflows/ci.yml)
-[![Benchmarks](https://img.shields.io/github/actions/workflow/status/A19dammer91/MRS-Hybride-PQC/ci.yml?label=benchmarks&style=flat-square&logo=githubactions&logoColor=white)](https://github.com/A19dammer91/MRS-Hybride-PQC/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange?style=flat-square&logo=rust)](https://www.rust-lang.org)
-[![NIST](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20ML--KEM--1024-informational?style=flat-square)](https://csrc.nist.gov/projects/post-quantum-cryptography)
-
 # MRS-AUTH
 
 ### Hybrid Post-Quantum Coercion-Resistant Authentication Framework
