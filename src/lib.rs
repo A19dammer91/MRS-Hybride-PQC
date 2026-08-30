@@ -14,7 +14,7 @@ pub use crate::framework::{FrameworkError, Keypair, MrsAuthFramework, SecureEnve
 pub use crate::sampler::MrsChain;
 pub use crate::security::TimeCode;
 
-// NEW: Expose the witness authentication & coercion-resistance API
+// Expose the witness authentication & coercion-resistance API
 pub use crate::security::witness::{
-    hash_chain, verify_witness_authenticity, MasterSecret, Witness, WitnessSpace, WitnessStatus,
+    hash_chain, MasterSecret, Witness, WitnessSpace, WitnessStatus,
 };
