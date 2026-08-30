@@ -133,9 +133,24 @@ impl MasterSecret {
                 if same.unwrap_u8() == 0 {
                     // Verify membership before returning
                     if space.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound {
+                        // FIX (tag distinguisher): an all-zero binding_tag
+                        // is trivially distinguishable from a real
+                        // HMAC-derived tag the instant binding_tag is ever
+                        // part of what an observer sees (e.g. if Witness
+                        // is ever serialized as a whole). Filling it with
+                        // random bytes from the caller-supplied RNG
+                        // instead makes it look exactly like a genuine tag
+                        // — a uniformly random 32-byte string is
+                        // information-theoretically indistinguishable from
+                        // an HMAC-SHA256 output under the same PRF
+                        // assumption the rest of this scheme already
+                        // relies on. This does not encode a real binding;
+                        // it only removes the cheap distinguisher.
+                        let mut alibi_tag = [0u8; 32];
+                        rng.fill_bytes(&mut alibi_tag);
                         return Some(Witness {
                             chain,
-                            binding_tag: [0u8; 32],
+                            binding_tag: alibi_tag,
                             session_id: authentic.session_id.clone(),
                         });
                     }
@@ -152,7 +167,7 @@ impl MasterSecret {
         None
     }
 
-    /// Compute binding tag: HMAC(master_secret, "MRS-AUTH-BIND" || identity || session_id || chain_hash)
+    /// Compute binding tag: HMAC(master_secret, "MRS-AUTH-BIND" || len(identity) || identity || len(session_id) || session_id || chain_hash)
     fn compute_binding_tag(
         master_key: &[u8; 32],
         identity: &[u8],
@@ -161,7 +176,15 @@ impl MasterSecret {
     ) -> [u8; 32] {
         let mut mac = HmacSha256::new_from_slice(master_key).expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-BIND-v1");
+        // FIX (chosen-identity / chosen-session distinguisher): without a
+        // length prefix, identity=b"ab",session=b"c" and
+        // identity=b"a",session=b"bc" hash to the same bytes, letting an
+        // adversary who controls identity/session force a collision
+        // across the boundary. Length-prefixing each field removes the
+        // ambiguity.
+        mac.update((identity.len() as u32).to_be_bytes());
         mac.update(identity);
+        mac.update((session_id.len() as u32).to_be_bytes());
         mac.update(session_id);
         mac.update(chain_hash);
         let result = mac.finalize().into_bytes();
@@ -183,9 +206,12 @@ impl MasterSecret {
     ) -> [u8; 32] {
         let mut mac = HmacSha256::new_from_slice(master_key).expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-SEED-v1");
+        // FIX: same length-prefix domain-separation fix as compute_binding_tag.
+        mac.update((identity.len() as u32).to_be_bytes());
         mac.update(identity);
+        mac.update((session_id.len() as u32).to_be_bytes());
         mac.update(session_id);
-        mac.update(&attempt.to_be_bytes());
+        mac.update(attempt.to_be_bytes());
         let result = mac.finalize().into_bytes();
         let mut seed = [0u8; 32];
         seed.copy_from_slice(&result);
@@ -455,7 +481,12 @@ mod tests {
             .expect("Failed to generate alternative witness");
 
         assert!(chains_equal_ct(&authentic.chain, &alibi.chain).unwrap_u8() == 0);
-        assert_eq!(alibi.binding_tag, [0u8; 32]);
+        // FIX: binding_tag is no longer forced to all-zero (see the
+        // tag-distinguisher fix in generate_alternative_witness) — it's
+        // now random, so the only thing worth asserting here is that it
+        // doesn't collide with the authentic tag, which is what actually
+        // matters for indistinguishability.
+        assert_ne!(alibi.binding_tag, authentic.binding_tag);
     }
 
     #[test]
