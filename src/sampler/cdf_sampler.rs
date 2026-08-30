@@ -117,7 +117,7 @@ fn ct_eq_u128(a: u128, b: u128) -> Choice {
 /// Returns 0 if no valid candidates exist.
 pub fn count_triangle_filtered_closed_form(n: u64) -> u64 {
     let a0 = digital_root(n);
-    let a0_19 = 19u64.checked_mul(a0).unwrap_or(u64::MAX);
+    let a0_19 = 19u64.saturating_mul(a0);
     let valid = a0_19.ct_le(&n); // 19*a0 <= n
 
     let b0 = n.wrapping_sub(19 * a0) / 9;
@@ -263,7 +263,7 @@ impl LayerParams {
     // Extracts layer parameters in constant time.
     pub fn new_ct(n: u64) -> Self {
         let a0 = digital_root(n);
-        let a0_19 = 19u64.checked_mul(a0).unwrap_or(u64::MAX);
+        let a0_19 = 19u64.saturating_mul(a0);
         let valid = a0_19.ct_le(&n); // 19*a0 <= n
 
         let b0 = n.wrapping_sub(19 * a0) / 9;
@@ -838,9 +838,6 @@ mod tests {
             valid.unwrap_u8()
         );
         println!("[DEBUG] {}", debug_info);
-
-        // This is informational, not a hard assert
-        assert!(true);
     }
 
     #[test]
@@ -852,9 +849,8 @@ mod tests {
         for _ in 0..10 {
             let result = sample_three_layers_ct_with_retries(root_n, &mut rng, 3);
             // No unwrap - just check if it works
-            if result.is_some() {
+            if let Some(chain) = result {
                 // Got a chain, verify it
-                let chain = result.unwrap();
                 assert!(chain.valid);
                 assert_eq!(chain.layers.len(), 3);
                 assert!(root_n > chain.layers[0].a);
