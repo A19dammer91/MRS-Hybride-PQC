@@ -124,7 +124,9 @@ mod tests {
     /// valid representation exists, so the family must be empty.
     #[test]
     fn small_multiples_of_nine_yield_no_spurious_representations() {
-        for n in [9u64, 18, 27, 36, 45, 54, 63, 72, 81, 90, 99, 108, 117, 126, 135, 144, 153, 162, 171] {
+        for n in [
+            9u64, 18, 27, 36, 45, 54, 63, 72, 81, 90, 99, 108, 117, 126, 135, 144, 153, 162, 171,
+        ] {
             let a0 = calculate_anchor(n);
             assert_eq!(a0, 9, "calculate_anchor({}) should be 9, got {}", n, a0);
 
