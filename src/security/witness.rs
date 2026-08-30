@@ -72,7 +72,7 @@ pub struct MasterSecret {
 struct ProtectedKey([u8; 32]);
 
 /// Operational mode of the master secret.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+#[derive(Debug, Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub enum SecretMode {
     /// Real identity, used for authentication.
     Authentic,
@@ -208,8 +208,8 @@ impl MasterSecret {
 
         // Step 3: Mode-dependent domain separation
         let domain = match config.mode {
-            SecretMode::Authentic => b"MRS-AUTH-MASTER-v1-AUTHENTIC",
-            SecretMode::Duress => b"MRS-AUTH-MASTER-v1-DURESS-X",
+            SecretMode::Authentic => b"MRS-AUTH-MASTER-v1-AUTHENTIC" as &[u8],
+            SecretMode::Duress => b"MRS-AUTH-MASTER-v1-DURESS" as &[u8],
         };
 
         let hkdf = Hkdf::<Sha256>::new(Some(&input.salt), &combined);
@@ -513,7 +513,7 @@ fn chains_equal_ct(a: &MrsChain, b: &MrsChain) -> Choice {
         eq &= pa.b.ct_eq(&pb.b);
     }
     eq
-}
+    }
 
 // =============================================================================
 // Deterministic RNG for reproducible authentic witness derivation
@@ -912,7 +912,7 @@ mod tests {
         assert_eq!(binding_check, WitnessStatus::BindingMismatch);
     }
 
-    #[test]
+        #[test]
     fn test_duress_indistinguishability() {
         let salt = [0u8; 16];
         let input = SecretInput {
@@ -1072,4 +1072,4 @@ mod tests {
             WitnessStatus::BindingMismatch
         );
     }
-    }
+}
