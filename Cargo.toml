@@ -1,15 +1,15 @@
 [package]
-name        = "mrs_auth_pqc"
-version     = "0.3.1"
-edition     = "2021"
-authors     = ["Bilal El Issaoui"]
+name = "mrs_auth_pqc"
+version = "0.3.1"
+edition = "2021"
+authors = ["Billal El Issaoui"]
 description = "Research-grade hybrid post-quantum KEM with Diophantine deniability. Not audited for production use."
-license     = "Apache-2.0"
-repository  = "https://github.com"
+license = "Apache-2.0"
+repository = "https://github.com"
 documentation = "https://docs.rs"
-readme      = "README.md"
-keywords    = ["cryptography", "post-quantum", "kyber", "deniability", "diophantine"]
-categories  = ["cryptography"]
+readme = "README.md"
+keywords = ["cryptography", "post-quantum", "kyber", "deniability", "diophantine"]
+categories = ["cryptography"]
 rust-version = "1.70"
 
 [lib]
@@ -27,12 +27,18 @@ subtle = { version = "2.6", default-features = false }
 zeroize = { version = "1.8", features = ["derive"] }
 
 # Hashing and cryptographic building blocks
-sha2    = "0.10"
-hmac    = "0.12"
-aes-gcm = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+aes-gcm = "0.10.3"
 
 # CSPRNG sampling in the MRS chain sampler
 rand = "0.8"
+
+# Memory-hard KDF for master secret derivation
+argon2 = "0.5"
+
+# Key derivation function
+hkdf = "0.12"
 
 # MAAK CRYPTO-BIGINT OPTIONEEL (Voor schaling naar N ~ 10^42 in de toekomst)
 crypto-bigint = { version = "0.6", features = ["hybrid-array"], optional = true }
@@ -50,4 +56,4 @@ harness = false
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+rustdoc-args = ["--cfg", "docs.rs"]
