@@ -21,8 +21,8 @@ pub struct MerkleProof {
 pub fn hash_mrs_chain(chain: &MrsChain) -> [u8; 32] {
     let mut hasher = Sha256::new();
     for pair in &chain.layers {
-        hasher.update(&pair.a.to_be_bytes());
-        hasher.update(&pair.b.to_be_bytes());
+        hasher.update(pair.a.to_be_bytes());
+        hasher.update(pair.b.to_be_bytes());
     }
     let mut out = [0u8; 32];
     out.copy_from_slice(&hasher.finalize());
