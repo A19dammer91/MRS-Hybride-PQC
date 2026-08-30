@@ -518,7 +518,20 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
         overall_valid &= params.valid;
 
         let (t_filter, e_prime, weight_valid) = weight_params_ct(&params);
-        overall_valid &= weight_valid;
+        // FIX: weight_params_ct derives t_filter/e_prime for the *weighted*
+        // CDF sampling used by non-final layers. The final layer samples
+        // uniformly over [0, t_max] instead and never uses t_filter/e_prime
+        // at all — so weight_valid being false here (which happens
+        // routinely once the final layer's t_max is small, e.g. t_max=1,
+        // since values shrink sharply each layer) must not veto an
+        // otherwise-valid uniform pick. Previously this was ANDed into
+        // overall_valid unconditionally, which silently discarded almost
+        // every chain whose *last* layer landed on a small n — the common
+        // case, not a rare one, which is why success dropped to ~0% for
+        // smaller root_n values.
+        if !is_last_layer {
+            overall_valid &= weight_valid;
+        }
 
         let total_weight = if is_last_layer {
             (params.t_max + 1) as u128
@@ -744,8 +757,10 @@ mod tests {
                         assert!(chain.layers[1].a > chain.layers[2].a);
                         
                         for pair in &chain.layers {
+                            // FIX: validate_triangle_condition(b, x) expects
+                            // the B-value first, the anchor value second.
                             assert!(
-                                validate_triangle_condition(pair.a, pair.b).unwrap_u8() == 1,
+                                validate_triangle_condition(pair.b, pair.a).unwrap_u8() == 1,
                                 "Triangle condition failed for ({}, {})", pair.a, pair.b
                             );
                         }
