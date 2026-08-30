@@ -264,8 +264,8 @@ pub fn verify_witness_authenticity(
 pub fn hash_chain(chain: &MrsChain) -> [u8; 32] {
     let mut hasher = Sha256::new();
     for pair in &chain.layers {
-        hasher.update(&pair.a.to_be_bytes());
-        hasher.update(&pair.b.to_be_bytes());
+        hasher.update(pair.a.to_be_bytes());
+        hasher.update(pair.b.to_be_bytes());
     }
     let mut out = [0u8; 32];
     out.copy_from_slice(&hasher.finalize());
@@ -311,9 +311,9 @@ impl DeterministicRng {
     fn refill(&mut self) {
         for i in 0..2 {
             let mut hasher = Sha256::new();
-            hasher.update(&self.state);
-            hasher.update(&self.counter.to_be_bytes());
-            hasher.update(&[i as u8]);
+            hasher.update(self.state);
+            hasher.update(self.counter.to_be_bytes());
+            hasher.update([i as u8]);
             let hash = hasher.finalize();
             self.buffer[i * 32..(i + 1) * 32].copy_from_slice(&hash);
         }
@@ -460,7 +460,7 @@ mod tests {
 
     #[test]
     fn test_membership_verification_valid() {
-        let (master, space, authentic) = generate_test_witness();
+        let (_master, space, authentic) = generate_test_witness();
         let status = space.verify_membership(&authentic);
         assert_eq!(status, WitnessStatus::ValidButUnbound);
     }
@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_binding_authenticity_success() {
-        let (master, space, authentic) = generate_test_witness();
+        let (master, _space, authentic) = generate_test_witness();
         let id = b"alice@example.com";
         let status = verify_witness_authenticity(&master, &authentic, id);
         assert_eq!(status, WitnessStatus::Authentic);
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn test_binding_authenticity_wrong_identity() {
-        let (master, space, authentic) = generate_test_witness();
+        let (master, _space, authentic) = generate_test_witness();
         let status = verify_witness_authenticity(&master, &authentic, b"eve@evil.com");
         assert_eq!(status, WitnessStatus::BindingMismatch);
     }
