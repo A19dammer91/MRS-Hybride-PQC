@@ -10,5 +10,5 @@ pub use timecode::{
 pub use merkle::{build_k_acceptance_root, verify_k_acceptance_proof, MerkleProof};
 
 pub use witness::{
-    hash_chain, verify_witness_authenticity, MasterSecret, Witness, WitnessSpace, WitnessStatus,
+    hash_chain, MasterSecret, Witness, WitnessSpace, WitnessStatus,
 };
