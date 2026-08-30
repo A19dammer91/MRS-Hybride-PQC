@@ -383,12 +383,22 @@ where
     F: FnMut(u64) -> Choice,
 {
     for _ in 0..64 {
-        let mid = lo + (hi.wrapping_sub(lo)) / 2;
+        // FIX: this loop always runs the full 64 iterations for constant-time
+        // reasons, even after lo/hi have converged. Once converged, `lo` can
+        // legitimately end up past `hi` (via `new_lo = mid + 1`), at which
+        // point `hi.wrapping_sub(lo)` intentionally wraps to a huge value on
+        // the following "phantom" iterations. Adding that back to `lo` with
+        // plain `+` then overflows and panics in debug builds (release mode
+        // masked this by wrapping silently, which is why it never showed up
+        // until an overflow-checked test build hit it). `wrapping_add` here
+        // keeps the exact same computed value in release mode while making
+        // debug builds behave identically instead of panicking.
+        let mid = lo.wrapping_add(hi.wrapping_sub(lo) / 2);
         let pred_mid = pred(mid);
 
         // If pred(mid) is true (prefix <= r), search the right half;
         // otherwise search the left half.
-        let new_lo = mid + 1;
+        let new_lo = mid.wrapping_add(1);
         lo = u64::conditional_select(&lo, &new_lo, pred_mid);
         hi = u64::conditional_select(&hi, &mid, !pred_mid);
     }
@@ -860,4 +870,4 @@ mod tests {
         // If we got here, no panics occurred
         println!("[INFO] Retry test passed without panics");
     }
-}
+        }
