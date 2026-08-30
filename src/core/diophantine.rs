@@ -25,7 +25,9 @@ pub fn digital_root(n: u64) -> u64 {
 
 /// Computes the MRS anchor A_0, per the Positive Anchor Convention:
 ///
-///     A_0 = min { a in Z_{>0} : a === N (mod 9) }
+/// ```text
+/// A_0 = min { a in Z_{>0} : a === N (mod 9) }
+/// ```
 ///
 /// which is equivalent to A_0 = dr(N) — including A_0 = 9 (not 0) when
 /// N === 0 (mod 9). This is a thin alias over `digital_root` so the two
