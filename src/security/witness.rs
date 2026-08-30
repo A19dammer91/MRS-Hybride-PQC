@@ -182,9 +182,9 @@ impl MasterSecret {
         // adversary who controls identity/session force a collision
         // across the boundary. Length-prefixing each field removes the
         // ambiguity.
-        mac.update((identity.len() as u32).to_be_bytes());
+        mac.update(&(identity.len() as u32).to_be_bytes());
         mac.update(identity);
-        mac.update((session_id.len() as u32).to_be_bytes());
+        mac.update(&(session_id.len() as u32).to_be_bytes());
         mac.update(session_id);
         mac.update(chain_hash);
         let result = mac.finalize().into_bytes();
@@ -207,11 +207,11 @@ impl MasterSecret {
         let mut mac = HmacSha256::new_from_slice(master_key).expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-SEED-v1");
         // FIX: same length-prefix domain-separation fix as compute_binding_tag.
-        mac.update((identity.len() as u32).to_be_bytes());
+        mac.update(&(identity.len() as u32).to_be_bytes());
         mac.update(identity);
-        mac.update((session_id.len() as u32).to_be_bytes());
+        mac.update(&(session_id.len() as u32).to_be_bytes());
         mac.update(session_id);
-        mac.update(attempt.to_be_bytes());
+        mac.update(&attempt.to_be_bytes());
         let result = mac.finalize().into_bytes();
         let mut seed = [0u8; 32];
         seed.copy_from_slice(&result);
