@@ -287,7 +287,6 @@ mod tests {
         let secret = [0xCDu8; 32];
         let mut rng = OsRng;
         let shares = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
-
         let subsets = vec![
             vec![shares[0], shares[1], shares[2]],
             vec![shares[1], shares[3], shares[4]],
