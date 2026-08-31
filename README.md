@@ -26,6 +26,7 @@
 - [Overview](#overview)
 - [The Crown Equations (Mathematical Core)](#-the-crown-equations-mathematical-core)
 - [Security Properties](#security-properties)
+- [Threat Model: What This Does and Does Not Protect Against](#threat-model-what-this-does-and-does-not-protect-against)
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [Installation](#installation)
@@ -119,6 +120,84 @@ $$a = a_0 + 9k \qquad b = b_0 - 19k$$
 | **Timing Attack Resistance** | Constant-time operations via `subtle` | Branch-free comparison and selection |
 | **Memory Safety** | `zeroize` + RAII drops | Secrets cleared from RAM on scope exit |
 | **Computational Scale** | Native `u64` (default) / `U256` (feature) | Supports standard machine words alongside an optional path for scaling up to $N \approx 10^{42}$ via features. |
+
+---
+
+## Threat Model: What This Does and Does Not Protect Against
+
+Coercion-resistant cryptography protects against a specific, narrower thing
+than the name suggests, and it is important to be precise about that.
+
+**Conceptually, MRS-AUTH is a mathematical descendant of Rubberhose**
+(Assange et al.), the deniable filesystem designed to resist rubber-hose
+cryptanalysis. Rubberhose achieved plausible deniability by physically
+filling a disk with indistinguishable encrypted chaff: to hide 10 GB of
+real data convincingly, you needed to pad out to, say, 1 TB, and pre-write
+plausible decoy content in advance. MRS-AUTH moves that haystack from disk
+space into abstract mathematics: instead of a large volume of pre-written
+decoy data, a single small three-layer chain (`MrsChain`) travels with the
+message, and the alternative mathematical witnesses are generated
+on-the-fly by the Crown Equations sampler rather than stored in advance.
+In that sense it is a smaller, faster, post-quantum, storage-free evolution
+of the same idea — but it inherits Rubberhose's one unavoidable limitation
+along with its strengths.
+
+**What the mathematics actually guarantees:** under the assumptions
+described in [`DENIABILITY.md`](DENIABILITY.md) and
+[`proofs/WITNESS-INDISTINGUISHABILITY.md`](proofs/WITNESS-INDISTINGUISHABILITY.md),
+an adversary who obtains a witness cannot mathematically prove whether it
+is the authentic one or an alternative. The coerced user is handed a
+genuine, verifiable-but-not-provably-authentic answer instead of the
+binary choice ("reveal the real secret" vs. "refuse and confirm one
+exists") that traditional single-secret schemes force.
+
+**What it does not, and cannot, guarantee:** the absence of mathematical
+proof does not stop a coercer from continuing regardless. If an attacker
+knows this construction exists and refuses to accept any witness until the
+victim mathematically proves no alternative witness exists — a proof that
+by design does not exist to give — the cryptography cannot end that
+demand. This is not a flaw specific to MRS-AUTH; it is the fundamental,
+well-known limit of every deniable-encryption or plausible-deniability
+scheme (Rubberhose included): it can defeat forensic and mathematical
+proof, but it cannot defeat the psychology, patience, or intentions of the
+person applying coercion.
+
+**A related, separate question is who can verify a witness at all.**
+`MasterSecret::verify_authenticity` requires `master_secret` to distinguish
+`Authentic` from `BindingMismatch`; the public `WitnessSpace::verify_membership`
+path sees only `ValidButUnbound` and cannot make that distinction. Whoever
+holds `master_secret` in a given deployment — a server, the user's own
+device, or some split arrangement — is exactly whoever can tell an
+authentic witness from an alibi, and is therefore also whoever a
+compromised-server or key-theft attacker would target to gain that same
+ability. This system provides no coercion-resistance against a party that
+already holds, or has obtained, `master_secret`; it only concerns the
+scenario where a coerced holder of a witness (not the key) is being
+pressured to explain or hand it over.
+
+**Intended deployment model.** `master_secret` is expected to be held
+server-side, ideally inside a sealed enclave/microservice that runs the
+functions requiring it (`generate_authentic_witness`,
+`verify_authenticity`) and never exports the key itself. At
+registration, the client is issued one legitimate `Witness` — a
+mathematically valid path over the public `N` — and nothing else. If the
+client is later coerced, its local application computes an alternative
+path itself via `generate_alternative_witness`, using only the public `N`
+(via `WitnessSpace`) and its own randomness; `master_secret` is not
+needed for, and is not present anywhere in, that computation.
+
+`generate_alternative_witness` is deliberately a method on `WitnessSpace`
+(built only from public `N`), not on `MasterSecret` — even though earlier
+revisions defined it as a `MasterSecret` method that simply never touched
+the key. That distinction is not cosmetic: under the current API, client
+code producing an alibi has no path by which a `MasterSecret` value could
+even be constructed or passed in, which is a guarantee the type system
+enforces rather than one that depends on the client-side implementation
+remembering not to use it.
+
+Under this model:
+- **Against a coercer pressuring the client:** coercion-resistance holds as designed — the client can produce a valid alternative witness without ever needing, holding, or exposing `master_secret`.
+- **Against a compromised server or enclave:** no protection is offered or claimed. Whoever holds `master_secret` can always distinguish authentic from alternative; that is inherent to keeping verification centralized, not a defect specific to this implementation.
 
 ---
 
@@ -324,10 +403,52 @@ pub struct DiophantinePair {
 
 Defined in `src/security/witness.rs`.
 
+`MasterSecret` is a multi-factor-derived, at-rest-sealable secret. Its
+internal key material is private — it is only ever produced via `derive`,
+recovered via `unseal`/`recover`, and consumed by the methods below.
+`generate_alternative_witness` deliberately lives on `WitnessSpace`, not
+on `MasterSecret` — see the [Threat Model](#threat-model-what-this-does-and-does-not-protect-against)
+section above for why that boundary matters.
+
 ```rust
-pub struct MasterSecret {
-    pub key: [u8; 32],
+/// Operational mode of a MasterSecret. Contains no secret data — a tag only.
+pub enum SecretMode {
+    /// Real identity, used for authentication.
+    Authentic,
+    /// Panic mode: revealed under coercion, generates unbound witnesses.
+    Duress,
 }
+
+/// Multi-factor input to MasterSecret::derive.
+pub struct SecretInput {
+    pub password: String,
+    pub hardware_token: Option<[u8; 32]>,
+    pub biometric_hash: Option<[u8; 32]>,
+    pub salt: [u8; 16],
+}
+
+/// KDF configuration for MasterSecret::derive.
+pub struct SecretConfig {
+    pub argon2_params: Argon2Params,
+    pub mode: SecretMode,
+}
+
+/// A share for Shamir Secret Sharing (split/recover are not yet
+/// implemented — currently `todo!()` in the source).
+pub struct KeyShare {
+    pub index: u8,
+    pub value: [u8; 32],
+}
+
+/// A MasterSecret encrypted at rest under a device key.
+pub struct SealedMasterSecret {
+    pub ciphertext: Vec<u8>,
+    pub nonce: [u8; 12],
+    pub mode: SecretMode,
+}
+
+/// The prover's long-term secret. Internal key material is private.
+pub struct MasterSecret { /* private fields */ }
 
 pub struct Witness {
     pub chain: MrsChain,
@@ -335,21 +456,46 @@ pub struct Witness {
     pub session_id: Vec<u8>,
 }
 
+/// An Alibi IS a Witness, but the type system treats it as distinct —
+/// preventing accidental submission of an alibi where an authentic
+/// witness is expected.
+pub struct Alibi(pub Witness);
+
 pub struct WitnessSpace {
     pub root_n: u64,
     pub depth: usize,
 }
 
 pub enum WitnessStatus {
+    /// Mathematically valid in W_N but NOT bound to any identity.
     ValidButUnbound,
+    /// Mathematically valid AND correctly bound to the claimed identity.
     Authentic,
+    /// Fails the N = 19A + 9B structural checks.
     Invalid,
+    /// Mathematically valid but the binding tag does not match.
     BindingMismatch,
 }
 
-impl MasterSecret {
-    pub fn from_entropy(entropy: &[u8; 32]) -> Self;
+pub enum DeriveError {
+    KdfFailed,
+    HkdfFailed,
+    InvalidFactors,
+    InsufficientEntropy,
+}
 
+impl MasterSecret {
+    /// Derive a master secret: Argon2id on the password, constant-time XOR
+    /// with optional hardware/biometric factors, then HKDF-SHA256 with
+    /// mode-specific domain separation.
+    pub fn derive(input: &SecretInput, config: &SecretConfig) -> Result<Self, DeriveError>;
+
+    /// Build the duress SecretInput from an authentic one (same factors,
+    /// password + panic suffix).
+    pub fn derive_duress_input(authentic: &SecretInput, panic_suffix: &str) -> SecretInput;
+
+    /// Deterministically derive the identity- and session-bound authentic
+    /// witness. Requires master_secret.
     pub fn generate_authentic_witness(
         &self,
         space: &WitnessSpace,
@@ -357,25 +503,57 @@ impl MasterSecret {
         session_id: &[u8],
     ) -> Option<Witness>;
 
-    pub fn generate_alternative_witness(
-        &self,
-        space: &WitnessSpace,
-        authentic: &Witness,
-        rng: &mut impl RngCore,
-    ) -> Option<Witness>;
+    /// Verify the cryptographic binding of a witness to an identity.
+    /// Requires master_secret — this is the verifier-side operation and
+    /// is the only way to distinguish Authentic from BindingMismatch.
+    pub fn verify_authenticity(&self, witness: &Witness, identity: &[u8]) -> WitnessStatus;
+
+    /// Encrypt the master secret at rest under a device key (e.g. TPM-derived).
+    pub fn seal(&self, device_key: &[u8; 32]) -> SealedMasterSecret;
+
+    /// Recover a MasterSecret from a SealedMasterSecret. Fails if device_key
+    /// is wrong.
+    pub fn unseal(sealed: &SealedMasterSecret, device_key: &[u8; 32]) -> Result<Self, DeriveError>;
+
+    pub fn mode(&self) -> SecretMode;
+
+    // Shamir Secret Sharing — stubs, not yet implemented (`todo!()`).
+    pub fn split(&self, threshold: usize, shares: usize) -> Result<Vec<KeyShare>, DeriveError>;
+    pub fn recover(shares: &[KeyShare], mode: SecretMode) -> Result<Self, DeriveError>;
 }
 
 impl WitnessSpace {
     pub fn new(root_n: u64, depth: usize) -> Self;
+
+    /// PUBLIC operation — anyone can verify mathematical membership in W_N.
+    /// Does NOT require master_secret and can only distinguish
+    /// ValidButUnbound from Invalid — never Authentic or BindingMismatch.
     pub fn verify_membership(&self, witness: &Witness) -> WitnessStatus;
+
+    /// PUBLIC operation — no MasterSecret needed anywhere in this call.
+    /// Generates a mathematically valid witness that is NOT bound to any
+    /// identity, suitable for handing over under coercion.
+    pub fn generate_alternative_witness(
+        &self,
+        authentic: &Witness,
+        rng: &mut impl RngCore,
+    ) -> Option<Alibi>;
 }
 
-pub fn verify_witness_authenticity(
-    master_secret: &MasterSecret,
-    witness: &Witness,
-    identity: &[u8],
-) -> WitnessStatus;
+/// Implemented by WitnessSpace. Lets client code generate an alibi through
+/// a trait object without ever having a MasterSecret value in scope.
+pub trait ProverSpace {
+    type WitnessType;
+    type AlibiType;
 
+    fn generate_alibi(
+        &self,
+        authentic: &Self::WitnessType,
+        rng: &mut impl RngCore,
+    ) -> Option<Self::AlibiType>;
+}
+
+/// SHA-256 hash of an MrsChain, used inside binding-tag computation.
 pub fn hash_chain(chain: &MrsChain) -> [u8; 32];
 ```
 
