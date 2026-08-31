@@ -283,18 +283,14 @@ impl MasterSecret {
             return Err(DeriveError::InsufficientShares);
         }
 
-        let raw_shares: Vec<(u8, [u8; 32])> = shares
-            .iter()
-            .map(|s| (s.index, s.value))
-            .collect();
+        let raw_shares: Vec<(u8, [u8; 32])> = shares.iter().map(|s| (s.index, s.value)).collect();
 
-        let secret = shamir::recover_secret(&raw_shares)
-            .map_err(|e| match e {
-                shamir::ShamirError::NoSharesProvided => DeriveError::InsufficientShares,
-                shamir::ShamirError::DuplicateShareIndex => DeriveError::DuplicateShares,
-                shamir::ShamirError::InvalidShareIndex => DeriveError::InvalidFactors,
-                _ => DeriveError::InvalidFactors,
-            })?;
+        let secret = shamir::recover_secret(&raw_shares).map_err(|e| match e {
+            shamir::ShamirError::NoSharesProvided => DeriveError::InsufficientShares,
+            shamir::ShamirError::DuplicateShareIndex => DeriveError::DuplicateShares,
+            shamir::ShamirError::InvalidShareIndex => DeriveError::InvalidFactors,
+            _ => DeriveError::InvalidFactors,
+        })?;
 
         Ok(Self {
             key: ProtectedKey(secret),
@@ -1119,7 +1115,6 @@ mod tests {
         );
     }
 
-
     // =============================================================================
     // Shamir Secret Sharing Tests
     // =============================================================================
@@ -1146,7 +1141,8 @@ mod tests {
 
         // Recover with exactly 3 shares (indices 0, 2, 4)
         let subset = vec![shares[0].clone(), shares[2].clone(), shares[4].clone()];
-        let recovered = MasterSecret::recover(&subset, SecretMode::Authentic).expect("recover failed");
+        let recovered =
+            MasterSecret::recover(&subset, SecretMode::Authentic).expect("recover failed");
         assert_eq!(recovered.key_bytes(), &original_key);
         assert_eq!(recovered.mode(), SecretMode::Authentic);
     }
@@ -1169,7 +1165,8 @@ mod tests {
 
         // 2-of-4 scheme
         let shares = master.split(2, 4).expect("split failed");
-        let recovered = MasterSecret::recover(&shares, SecretMode::Authentic).expect("recover failed");
+        let recovered =
+            MasterSecret::recover(&shares, SecretMode::Authentic).expect("recover failed");
         assert_eq!(recovered.key_bytes(), &original_key);
     }
 
@@ -1199,7 +1196,8 @@ mod tests {
         ];
 
         for subset in subsets {
-            let recovered = MasterSecret::recover(&subset, SecretMode::Authentic).expect("recover failed");
+            let recovered =
+                MasterSecret::recover(&subset, SecretMode::Authentic).expect("recover failed");
             assert_eq!(recovered.key_bytes(), &original_key);
         }
     }
@@ -1311,7 +1309,11 @@ mod tests {
         let shares = master.split(3, 5).expect("split failed");
         let mut indices = std::collections::HashSet::new();
         for share in &shares {
-            assert!(indices.insert(share.index), "Duplicate index found: {}", share.index);
+            assert!(
+                indices.insert(share.index),
+                "Duplicate index found: {}",
+                share.index
+            );
             assert_ne!(share.index, 0);
         }
         assert_eq!(indices.len(), 5);
