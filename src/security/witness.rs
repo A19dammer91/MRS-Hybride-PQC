@@ -362,7 +362,7 @@ impl MasterSecret {
         chain_hash: &[u8; 32],
     ) -> [u8; 32] {
         let mut mac =
-    <HmacSha256 as Mac>::new_from_slice(master_key).expect("HMAC key length is valid");
+        <HmacSha256 as Mac>::new_from_slice(master_key).expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-BIND-v1");
         mac.update(&(identity.len() as u32).to_be_bytes());
         mac.update(identity);
@@ -384,7 +384,7 @@ impl MasterSecret {
         attempt: u32,
     ) -> [u8; 32] {
         let mut mac =
-    <HmacSha256 as Mac>::new_from_slice(master_key).expect("HMAC key length is valid");
+        <HmacSha256 as Mac>::new_from_slice(master_key).expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-SEED-v1");
         mac.update(&(identity.len() as u32).to_be_bytes());
         mac.update(identity);
