@@ -281,7 +281,7 @@ mod tests {
         let recovered = recover_secret(&shares).expect("recover failed");
         assert_eq!(recovered, secret);
     }
-    
+
     #[test]
     fn shamir_different_subsets_equivalent() {
         let secret = [0xCDu8; 32];
