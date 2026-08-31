@@ -251,13 +251,16 @@ This guarantees that **every complete chain in the forest has exactly the same p
 | **Nesting** | 3-layer Matryoshka with triangle filtering | Every path is a complete, valid, nestable chain |
 | **Uniformity** | Weighted CDF sampling via `OsRng` | No chain is distinguishable as "more likely" than any other |
 
-Together, these create **information-theoretic deniability**: even an attacker with unbounded computational power cannot determine which chain was the authentic one.
+Together, these create **information-theoretic uniformity in chain selection**: given the sampler's own randomness, every valid chain for a given `N` is chosen with exactly equal probability — a purely combinatorial guarantee that holds regardless of any computational assumption.
+
+The *full* coercion scenario — an authentic witness deterministically derived from `master_secret` looking indistinguishable from a freely-sampled alibi witness — is a **computational**, not information-theoretic, guarantee: it reduces to standard cryptographic assumptions (HMAC-SHA256 as a PRF, and the deterministic RNG behaving as a PRG). See [`proofs/WITNESS-INDISTINGUISHABILITY.md`](proofs/WITNESS-INDISTINGUISHABILITY.md) for the precise argument and its stated limitations.
 
 ---
 
 ## Further Reading
 
 - [Full Paper (Zenodo)](https://doi.org/10.5281/zenodo.21852606) — Formal proofs of the Forest Symmetry Theorem
-- [`proofs/MRS_Deny.ec`](proofs/MRS_Deny.ec) — EasyCrypt machine verification of deniability
+- [`proofs/MRS_Deny.ec`](proofs/MRS_Deny.ec) — EasyCrypt verification that two independent draws from the chain sampler (same `N`, same parameters) are identically distributed. This covers chain-selection uniformity only; it does not model `master_secret`, identity/session binding, or the authentic-vs-alibi asymmetry.
+- [`proofs/WITNESS-INDISTINGUISHABILITY.md`](proofs/WITNESS-INDISTINGUISHABILITY.md) — informal hybrid-argument proof (not machine-verified) covering the full authentic-vs-alibi scenario, including its explicit scope limitations (timing side channels, retry-count leakage, adaptive queries)
 - [`src/sampler/cdf_sampler.rs`](src/sampler/cdf_sampler.rs) — Implementation of the weighted sampler
 - [`src/core/diophantine.rs`](src/core/diophantine.rs) — Diophantine algebra and Popoviciu formulas

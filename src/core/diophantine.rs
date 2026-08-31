@@ -2,7 +2,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use zeroize::Zeroize;
 
 /// Struct representing a single representation (A, B) at one layer
-#[derive(Debug, Clone, Zeroize)]
+#[derive(Debug, Clone, PartialEq, Zeroize)]
 #[zeroize(drop)]
 pub struct DiophantinePair {
     pub a: u64,

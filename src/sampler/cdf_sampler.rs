@@ -27,7 +27,7 @@ use subtle::{
 use zeroize::Zeroize;
 
 // A complete 3-layer witness chain.
-#[derive(Debug, Clone, Zeroize)]
+#[derive(Debug, Clone, PartialEq, Zeroize)]
 #[zeroize(drop)]
 pub struct MrsChain {
     pub layers: Vec<DiophantinePair>,

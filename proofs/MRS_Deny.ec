@@ -2,6 +2,32 @@
 (*  MRS_Deny.ec                                                       *)
 (*  Formal deniability: no adversary does better than 50%             *)
 (* ================================================================= *)
+(*                                                                     *)
+(*  SCOPE NOTE:                                                       *)
+(*  This file proves that two independent calls to MRSChain.build,    *)
+(*  with IDENTICAL arguments (N, depth, tri), are indistinguishable   *)
+(*  — i.e. chain-selection uniformity for a single sampler under a    *)
+(*  single set of parameters.                                          *)
+(*                                                                     *)
+(*  It does NOT model:                                                 *)
+(*    - master_secret, or the HMAC-based deterministic seed            *)
+(*      derivation used to produce the "authentic" witness             *)
+(*    - identity / session_id binding                                  *)
+(*    - the binding_tag, or any asymmetry between the authentic-       *)
+(*      generation path (DeterministicRng from an HMAC seed) and the   *)
+(*      alternative-generation path (OsRng)                            *)
+(*                                                                     *)
+(*  In other words: DenyGame below draws ch0 and ch1 from the SAME     *)
+(*  build procedure with the SAME inputs — it does not model the       *)
+(*  actual authentic-vs-alibi scenario described in DENIABILITY.md.    *)
+(*  That fuller scenario, including the computational (not             *)
+(*  information-theoretic) assumptions it relies on and its explicit   *)
+(*  limitations, is argued separately in                               *)
+(*  proofs/WITNESS-INDISTINGUISHABILITY.md. This file establishes a    *)
+(*  narrower, purely combinatorial fact about the sampler, not a       *)
+(*  machine-verified proof of the full protocol's deniability.         *)
+(*                                                                     *)
+(* ================================================================= *)
 
 require import MRS_Chain.
 import MRSChain.
@@ -38,8 +64,10 @@ proof.
 qed.
 
 (* ----------------------------------------------------------------- *)
-(* Main theorem: information-theoretic deniability                    *)
-(* Adv_DENY(A) = |Pr[b'=b] - 1/2| = 0 for every adversary A         *)
+(* Main theorem: sampler-level chain-selection indistinguishability   *)
+(* (see SCOPE NOTE above — this is narrower than full protocol        *)
+(* deniability). Adv_DENY(A) = |Pr[b'=b] - 1/2| = 0 for every          *)
+(* adversary A, within this narrower game.                            *)
 (* ----------------------------------------------------------------- *)
 lemma deny_advantage (A <: Adversary) (N : int) (depth : int) (tri : int list) :
   N > 143 => N %% 9 <> 0 =>
@@ -52,7 +80,7 @@ proof.
   byphoare => //.
   proc.
 
-  (* Step 1: sample b uniformly â€” independent of the chains *)
+  (* Step 1: sample b uniformly — independent of the chains *)
   seq 3 : b (1%r/2%r) (1%r) (1%r/2%r) (0%r).
   - (* b is drawn uniformly, chains are independent *)
     call (build_equiv N depth tri hN hmod).
@@ -75,7 +103,7 @@ proof.
     call (key ch1).
     auto.
 
-  - (* b = false branch â€” analogous *)
+  - (* b = false branch — analogous *)
     if => />.
     have key : forall (ch : int list),
       phoare [A.guess : arg = ch ==> true] = 1%r.
