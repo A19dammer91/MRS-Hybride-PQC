@@ -59,12 +59,9 @@ pub fn gf_mul(a: u8, b: u8) -> u8 {
     let mut a = a;
     let mut b = b;
     for _ in 0..8 {
-        // If b's LSB is set, XOR result with a. Branch-free via mask.
         let mask = 0u8.wrapping_sub(b & 1);
         result ^= a & mask;
 
-        // If a's MSB is set, the next left-shift overflows into x^8;
-        // reduce by XOR-ing with the polynomial (without x^8 term).
         let high = a >> 7;
         a <<= 1;
         let reduce_mask = 0u8.wrapping_sub(high);
@@ -76,36 +73,19 @@ pub fn gf_mul(a: u8, b: u8) -> u8 {
 }
 
 /// Branch-free GF(256) multiplicative inverse.
-///
-/// In GF(256), a^255 = 1 for all a != 0, so a^-1 = a^254.
-/// 254 = 0b11111110 = 2 + 4 + 8 + 16 + 32 + 64 + 128.
-/// We compute a^254 with a fixed sequence of 7 squarings and 6
-/// multiplications — no branches, no lookups.
-///
-/// Returns 0 for a = 0 (mathematically undefined, but handled
-/// branch-free so the function never panics).
 #[inline]
 pub fn gf_inv(a: u8) -> u8 {
-    // is_nonzero = 0 if a == 0, else 1. Branch-free idiom.
     let is_nonzero = (a | a.wrapping_neg()) >> 7;
-    let mask = 0u8.wrapping_sub(is_nonzero); // 0x00 if a==0, 0xFF if a>0
+    let mask = 0u8.wrapping_sub(is_nonzero);
 
-    // s1 = a^2
     let s1 = gf_mul(a, a);
-    // s2 = a^4
     let s2 = gf_mul(s1, s1);
-    // s3 = a^8
     let s3 = gf_mul(s2, s2);
-    // s4 = a^16
     let s4 = gf_mul(s3, s3);
-    // s5 = a^32
     let s5 = gf_mul(s4, s4);
-    // s6 = a^64
     let s6 = gf_mul(s5, s5);
-    // s7 = a^128
     let s7 = gf_mul(s6, s6);
 
-    // a^254 = a^128 * a^64 * a^32 * a^16 * a^8 * a^4 * a^2
     let mut r = gf_mul(s7, s6);
     r = gf_mul(r, s5);
     r = gf_mul(r, s4);
@@ -117,7 +97,6 @@ pub fn gf_inv(a: u8) -> u8 {
 }
 
 /// Evaluate a polynomial at point x using Horner's method.
-/// coeffs[0] is the constant term (the secret).
 pub fn eval_poly(coeffs: &[u8], x: u8) -> u8 {
     let mut result = 0u8;
     for i in (0..coeffs.len()).rev() {
@@ -127,15 +106,6 @@ pub fn eval_poly(coeffs: &[u8], x: u8) -> u8 {
 }
 
 /// Lagrange interpolation at x = 0.
-/// Given points (x_i, y_i), returns f(0) where f is the unique polynomial
-/// of degree < points.len() passing through all points.
-///
-/// Callers are responsible for ensuring `points` contains at least
-/// `threshold` entries with distinct, non-zero x-coordinates; this
-/// function has no way to detect an under-supplied or malformed point
-/// set and will silently return an incorrect value rather than an error
-/// if given fewer or the wrong points; use [`recover_secret`] for the
-/// validated, higher-level entry point.
 pub fn lagrange_at_zero(points: &[(u8, u8)]) -> u8 {
     let mut secret = 0u8;
     for (i, &(x_i, y_i)) in points.iter().enumerate() {
@@ -144,7 +114,6 @@ pub fn lagrange_at_zero(points: &[(u8, u8)]) -> u8 {
         for (j, &(x_j, _)) in points.iter().enumerate() {
             if i != j {
                 numerator = gf_mul(numerator, x_j);
-                // In GF(2^8), subtraction = addition = XOR
                 denominator = gf_mul(denominator, gf_add(x_j, x_i));
             }
         }
@@ -154,7 +123,7 @@ pub fn lagrange_at_zero(points: &[(u8, u8)]) -> u8 {
     secret
 }
 
-/// Validate a (threshold, shares) configuration before splitting.
+/// Validate a (threshold, shares) configuration.
 fn validate_split_params(threshold: usize, shares: usize) -> Result<(), ShamirError> {
     if threshold < 2 {
         return Err(ShamirError::ThresholdTooSmall);
@@ -168,19 +137,7 @@ fn validate_split_params(threshold: usize, shares: usize) -> Result<(), ShamirEr
     Ok(())
 }
 
-/// Split a 32-byte secret into `shares` shares with `threshold` required.
-/// Returns a Vec of (index, [u8; 32]) tuples. Indices are 1-based
-/// (never 0 — index 0 is reserved for the secret's own evaluation point).
-///
-/// # Errors
-/// - [`ShamirError::ThresholdTooSmall`] if `threshold < 2`.
-/// - [`ShamirError::NotEnoughShares`] if `shares < threshold`.
-/// - [`ShamirError::TooManyShares`] if `shares > 255`.
-///
-/// # Requirements
-/// - `rng` must be cryptographically secure. The security of the sharing
-///   scheme depends entirely on the coefficients drawn from it being
-///   unpredictable.
+/// Split a 32-byte secret into shares.
 pub fn split_secret(
     secret: &[u8; 32],
     threshold: usize,
@@ -199,8 +156,6 @@ pub fn split_secret(
         }
 
         for (share_idx, share_val) in share_values.iter_mut().enumerate().take(shares) {
-            // 1-based: x = 1, 2, ..., shares. x = 0 is never used as a
-            // share point since that is the secret's own evaluation point.
             let x = (share_idx + 1) as u8;
             share_val[byte_idx] = eval_poly(&coeffs, x);
         }
@@ -211,27 +166,12 @@ pub fn split_secret(
     let mut result = Vec::with_capacity(shares);
     for (idx, mut value) in share_values.into_iter().enumerate() {
         result.push(((idx + 1) as u8, value));
-        // The Vec retains its own copy via push (Copy type), so the
-        // loop-local binding can be cleared without affecting `result`.
         value.zeroize();
     }
     Ok(result)
 }
 
-/// Recover a 32-byte secret from shares using Lagrange interpolation.
-///
-/// # Errors
-/// - [`ShamirError::NoSharesProvided`] if `shares` is empty.
-/// - [`ShamirError::InvalidShareIndex`] if any share has index 0.
-/// - [`ShamirError::DuplicateShareIndex`] if two shares share an index.
-///
-/// # Important
-/// This function cannot verify that the supplied shares meet the
-/// *original* `threshold` used at split time — that information is not
-/// encoded in the shares themselves. Supplying fewer than the original
-/// threshold will not produce an error; it will silently produce an
-/// incorrect secret. Callers must track and enforce the intended
-/// threshold themselves (e.g. via `MasterSecret`'s own bookkeeping).
+/// Recover a 32-byte secret from shares.
 pub fn recover_secret(shares: &[(u8, [u8; 32])]) -> Result<[u8; 32], ShamirError> {
     if shares.is_empty() {
         return Err(ShamirError::NoSharesProvided);
@@ -277,7 +217,6 @@ mod tests {
 
     #[test]
     fn gf_mul_associative() {
-        // (a * b) * c == a * (b * c)
         assert_eq!(gf_mul(gf_mul(7, 9), 13), gf_mul(7, gf_mul(9, 13)));
     }
 
@@ -289,7 +228,6 @@ mod tests {
 
     #[test]
     fn gf_mul_known_vectors() {
-        // Known AES GF(2^8) multiplication test vectors
         assert_eq!(gf_mul(0x57, 0x13), 0xFE);
         assert_eq!(gf_mul(0x57, 0x83), 0xC1);
     }
@@ -314,9 +252,11 @@ mod tests {
 
     #[test]
     fn lagrange_recover_single_point() {
-        // f(x) = 7 + 3x, recover f(0) from (1, 10), (2, 13)
-        let points = [(1u8, 10u8), (2u8, 13u8)];
-        assert_eq!(lagrange_at_zero(&points), 7);
+        // f(x) = 5 + 7x in GF(2^8)
+        // f(1) = 5 xor 7 = 2
+        // f(2) = 5 xor (7*2) = 5 xor 14 = 11
+        let points = [(1u8, 2u8), (2u8, 11u8)];
+        assert_eq!(lagrange_at_zero(&points), 5);
     }
 
     #[test]
@@ -324,25 +264,21 @@ mod tests {
         let secret = [0xABu8; 32];
         let mut rng = OsRng;
         let shares = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
-
-        // Recover with shares 0, 2, 4
         let subset = vec![shares[0], shares[2], shares[4]];
         let recovered = recover_secret(&subset).expect("recover failed");
         assert_eq!(recovered, secret);
     }
 
-    // GECORRIGEERDE TEST: nu met een echte 32-byte array
     #[test]
     fn shamir_roundtrip_2_of_4() {
-        // Vaste 32-byte testvector (0x01 t/m 0x20)
         let secret: [u8; 32] = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
-            0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C,
-            0x1D, 0x1E, 0x1F, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+            0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20,
         ];
         let mut rng = OsRng;
         let shares = split_secret(&secret, 2, 4, &mut rng).expect("split failed");
-
         let recovered = recover_secret(&shares).expect("recover failed");
         assert_eq!(recovered, secret);
     }
@@ -408,7 +344,10 @@ mod tests {
     #[test]
     fn recover_rejects_zero_index() {
         let shares = vec![(0u8, [1u8; 32]), (1u8, [2u8; 32])];
-        assert_eq!(recover_secret(&shares), Err(ShamirError::InvalidShareIndex));
+        assert_eq!(
+            recover_secret(&shares),
+            Err(ShamirError::InvalidShareIndex)
+        );
     }
 
     #[test]
@@ -422,14 +361,9 @@ mod tests {
 
     #[test]
     fn recover_with_fewer_than_threshold_gives_wrong_secret_not_error() {
-        // Documents the documented limitation: recover_secret cannot know
-        // the original threshold, so an under-supplied set of shares
-        // succeeds but yields the wrong secret rather than an error.
         let secret = [0x42u8; 32];
         let mut rng = OsRng;
         let shares = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
-
-        // Only 2 of the required 3 shares.
         let insufficient = vec![shares[0], shares[1]];
         let recovered = recover_secret(&insufficient).expect("recover should not error");
         assert_ne!(
