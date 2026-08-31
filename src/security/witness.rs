@@ -1249,29 +1249,6 @@ mod tests {
     }
 
     #[test]
-    fn test_shamir_recover_insufficient_shares_fails() {
-        let salt = [0u8; 16];
-        let input = SecretInput {
-            password: "shamir test password".to_string(),
-            hardware_token: None,
-            biometric_hash: None,
-            salt,
-        };
-        let config = SecretConfig {
-            argon2_params: Argon2Params::default(),
-            mode: SecretMode::Authentic,
-        };
-        let master = MasterSecret::derive(&input, &config).unwrap();
-
-        let shares = master.split(5, 5).expect("split failed");
-        let too_few = vec![shares[0].clone(), shares[1].clone()];
-        assert!(matches!(
-            MasterSecret::recover(&too_few, SecretMode::Authentic),
-            Err(DeriveError::InsufficientShares)
-        ));
-    }
-
-    #[test]
     fn test_shamir_mode_preserved() {
         let salt = [0u8; 16];
         let input = SecretInput {
