@@ -18,6 +18,7 @@
 //! - `Duress` mode produces mathematically valid but unbound witnesses.
 //! - `seal`/`unseal` protects the master secret at rest.
 
+use crate::crypto::shamir;
 use crate::sampler::{sample_three_layers_safe, MrsChain};
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -139,13 +140,17 @@ pub enum WitnessStatus {
     BindingMismatch,
 }
 
-/// Errors during derivation.
+/// Errors during derivation or secret sharing.
 #[derive(Debug)]
 pub enum DeriveError {
     KdfFailed,
     HkdfFailed,
     InvalidFactors,
     InsufficientEntropy,
+    /// Not enough shares provided for recovery.
+    InsufficientShares,
+    /// Duplicate share indices detected.
+    DuplicateShares,
 }
 
 // =============================================================================
@@ -245,18 +250,56 @@ impl MasterSecret {
         }
     }
 
-    // --- Shamir Secret Sharing (stubs) ---
+    // --- Shamir Secret Sharing ---
 
     /// Split the master secret into `shares` shares, `threshold` needed.
-    pub fn split(&self, _threshold: usize, _shares: usize) -> Result<Vec<KeyShare>, DeriveError> {
-        // TODO: Integrate with production SSS crate (e.g. `shamir_secret_sharing`)
-        todo!("Integrate with SSS crate")
+    ///
+    /// Delegates to `shamir::split_secret` over GF(2^8). Each byte of the
+    /// 32-byte master key is shared independently using a distinct random
+    /// polynomial of degree `threshold - 1`.
+    pub fn split(&self, threshold: usize, shares: usize) -> Result<Vec<KeyShare>, DeriveError> {
+        let mut rng = OsRng;
+        let raw_shares = shamir::split_secret(self.key_bytes(), threshold, shares, &mut rng)
+            .map_err(|e| match e {
+                shamir::ShamirError::ThresholdTooSmall
+                | shamir::ShamirError::NotEnoughShares
+                | shamir::ShamirError::TooManyShares => DeriveError::InvalidFactors,
+                _ => DeriveError::InvalidFactors,
+            })?;
+
+        Ok(raw_shares
+            .into_iter()
+            .map(|(idx, value)| KeyShare { index: idx, value })
+            .collect())
     }
 
     /// Recover a master secret from a set of shares.
-    pub fn recover(_shares: &[KeyShare], _mode: SecretMode) -> Result<Self, DeriveError> {
-        // TODO: Integrate with production SSS crate
-        todo!("Integrate with SSS crate")
+    ///
+    /// Uses Lagrange interpolation in GF(2^8). The caller must supply at
+    /// least `threshold` shares with distinct 1-based indices. The mode
+    /// is not encoded in the shares and must be provided by the caller.
+    pub fn recover(shares: &[KeyShare], mode: SecretMode) -> Result<Self, DeriveError> {
+        if shares.len() < 2 {
+            return Err(DeriveError::InsufficientShares);
+        }
+
+        let raw_shares: Vec<(u8, [u8; 32])> = shares
+            .iter()
+            .map(|s| (s.index, s.value))
+            .collect();
+
+        let secret = shamir::recover_secret(&raw_shares)
+            .map_err(|e| match e {
+                shamir::ShamirError::NoSharesProvided => DeriveError::InsufficientShares,
+                shamir::ShamirError::DuplicateShareIndex => DeriveError::DuplicateShares,
+                shamir::ShamirError::InvalidShareIndex => DeriveError::InvalidFactors,
+                _ => DeriveError::InvalidFactors,
+            })?;
+
+        Ok(Self {
+            key: ProtectedKey(secret),
+            mode,
+        })
     }
 
     // --- At-Rest Protection ---
@@ -1074,5 +1117,203 @@ mod tests {
             master.verify_authenticity(&alibi.0, b"alice@example.com"),
             WitnessStatus::BindingMismatch
         );
+    }
+
+
+    // =============================================================================
+    // Shamir Secret Sharing Tests
+    // =============================================================================
+
+    #[test]
+    fn test_shamir_split_recover_exact_threshold() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let original_key = *master.key_bytes();
+
+        // 3-of-5 scheme
+        let shares = master.split(3, 5).expect("split failed");
+        assert_eq!(shares.len(), 5);
+
+        // Recover with exactly 3 shares (indices 0, 2, 4)
+        let subset = vec![shares[0].clone(), shares[2].clone(), shares[4].clone()];
+        let recovered = MasterSecret::recover(&subset, SecretMode::Authentic).expect("recover failed");
+        assert_eq!(recovered.key_bytes(), &original_key);
+        assert_eq!(recovered.mode(), SecretMode::Authentic);
+    }
+
+    #[test]
+    fn test_shamir_split_recover_all_shares() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let original_key = *master.key_bytes();
+
+        // 2-of-4 scheme
+        let shares = master.split(2, 4).expect("split failed");
+        let recovered = MasterSecret::recover(&shares, SecretMode::Authentic).expect("recover failed");
+        assert_eq!(recovered.key_bytes(), &original_key);
+    }
+
+    #[test]
+    fn test_shamir_split_recover_different_subsets() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let original_key = *master.key_bytes();
+
+        let shares = master.split(3, 5).expect("split failed");
+
+        // Try multiple 3-share subsets
+        let subsets = vec![
+            vec![shares[0].clone(), shares[1].clone(), shares[2].clone()],
+            vec![shares[1].clone(), shares[3].clone(), shares[4].clone()],
+            vec![shares[0].clone(), shares[3].clone(), shares[4].clone()],
+        ];
+
+        for subset in subsets {
+            let recovered = MasterSecret::recover(&subset, SecretMode::Authentic).expect("recover failed");
+            assert_eq!(recovered.key_bytes(), &original_key);
+        }
+    }
+
+    #[test]
+    fn test_shamir_split_invalid_parameters() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+
+        // Threshold too low
+        assert!(master.split(1, 5).is_err());
+        // Shares < threshold
+        assert!(master.split(3, 2).is_err());
+        // Shares > 255
+        assert!(master.split(3, 256).is_err());
+    }
+
+    #[test]
+    fn test_shamir_recover_duplicate_shares_fails() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+
+        let shares = master.split(3, 5).expect("split failed");
+        let bad_subset = vec![shares[0].clone(), shares[0].clone(), shares[1].clone()];
+        assert!(matches!(
+            MasterSecret::recover(&bad_subset, SecretMode::Authentic),
+            Err(DeriveError::DuplicateShares)
+        ));
+    }
+
+    #[test]
+    fn test_shamir_recover_insufficient_shares_fails() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+
+        let shares = master.split(5, 5).expect("split failed");
+        let too_few = vec![shares[0].clone(), shares[1].clone()];
+        assert!(matches!(
+            MasterSecret::recover(&too_few, SecretMode::Authentic),
+            Err(DeriveError::InsufficientShares)
+        ));
+    }
+
+    #[test]
+    fn test_shamir_mode_preserved() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Duress,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+
+        let shares = master.split(3, 5).expect("split failed");
+        let recovered = MasterSecret::recover(&shares, SecretMode::Duress).expect("recover failed");
+        assert_eq!(recovered.mode(), SecretMode::Duress);
+    }
+
+    #[test]
+    fn test_shamir_share_indices_unique() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+
+        let shares = master.split(3, 5).expect("split failed");
+        let mut indices = std::collections::HashSet::new();
+        for share in &shares {
+            assert!(indices.insert(share.index), "Duplicate index found: {}", share.index);
+            assert_ne!(share.index, 0);
+        }
+        assert_eq!(indices.len(), 5);
     }
 }
