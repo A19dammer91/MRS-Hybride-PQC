@@ -72,7 +72,9 @@ pub struct MasterSecret {
 struct ProtectedKey([u8; 32]);
 
 /// Operational mode of the master secret.
-#[derive(Debug, Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+/// This enum contains no secret data - it's only a tag.
+/// Therefore it can be Copy without compromising security.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Zeroize)]
 pub enum SecretMode {
     /// Real identity, used for authentication.
     Authentic,
@@ -170,7 +172,6 @@ impl ProverSpace for WitnessSpace {
         self.generate_alternative_witness(authentic, rng)
     }
 }
-
 // =============================================================================
 // Master Secret — Multi-Factor Derivation & Management
 // =============================================================================
@@ -309,7 +310,7 @@ impl MasterSecret {
     pub fn mode(&self) -> SecretMode {
         self.mode
     }
-}
+            }
 
 // =============================================================================
 // Authentic Witness Generation
@@ -360,7 +361,7 @@ impl MasterSecret {
         session_id: &[u8],
         chain_hash: &[u8; 32],
     ) -> [u8; 32] {
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(master_key)
+        let mut mac = HmacSha256::new_from_slice(master_key)
             .expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-BIND-v1");
         mac.update(&(identity.len() as u32).to_be_bytes());
@@ -382,7 +383,7 @@ impl MasterSecret {
         session_id: &[u8],
         attempt: u32,
     ) -> [u8; 32] {
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(master_key)
+        let mut mac = HmacSha256::new_from_slice(master_key)
             .expect("HMAC key length is valid");
         mac.update(b"MRS-AUTH-SEED-v1");
         mac.update(&(identity.len() as u32).to_be_bytes());
@@ -513,7 +514,7 @@ fn chains_equal_ct(a: &MrsChain, b: &MrsChain) -> Choice {
         eq &= pa.b.ct_eq(&pb.b);
     }
     eq
-        }
+            }
 
 // =============================================================================
 // Deterministic RNG for reproducible authentic witness derivation
@@ -912,7 +913,7 @@ mod tests {
         assert_eq!(binding_check, WitnessStatus::BindingMismatch);
     }
 
-        #[test]
+    #[test]
     fn test_duress_indistinguishability() {
         let salt = [0u8; 16];
         let input = SecretInput {
@@ -1072,4 +1073,4 @@ mod tests {
             WitnessStatus::BindingMismatch
         );
     }
-        }
+                   }
