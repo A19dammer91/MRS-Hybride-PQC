@@ -466,7 +466,9 @@ impl WitnessSpace {
         for _attempt in 0..512 {
             if let Some(chain) = sample_three_layers_safe(self.root_n, rng) {
                 let same = chains_equal_ct(&chain, &authentic.chain);
-                if same.unwrap_u8() == 0 && self.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound {
+                if same.unwrap_u8() == 0
+    && self.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound
+                {
                     let mut alibi_tag = [0u8; 32];
                     rng.fill_bytes(&mut alibi_tag);
 
