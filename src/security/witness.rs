@@ -313,7 +313,11 @@ impl MasterSecret {
             _ => DeriveError::InvalidFactors,
         });
 
-        for (_, mut value) in &mut raw_shares {
+        // Zeroize the temporary share buffer now that recovery has run.
+        // NOTE: must iterate with `iter_mut()` (not `&mut raw_shares` with a
+        // `mut` binding) since `[u8; 32]` is `Copy` — binding by value would
+        // silently zeroize a local copy instead of the data in `raw_shares`.
+        for (_, value) in raw_shares.iter_mut() {
             value.zeroize();
         }
 
