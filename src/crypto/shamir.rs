@@ -33,6 +33,14 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
+// =============================================================================
+// Type alias to reduce clippy::type_complexity warning
+// =============================================================================
+
+/// A tuple containing (shares, commitment).  
+/// Shares are a vector of `(index, 32-byte share_value)`, commitment is a SHA-256 hash.
+pub type ShamirSharesWithCommitment = (Vec<(u8, [u8; 32])>, [u8; 32]);
+
 /// Errors that can occur during share splitting or recovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShamirError {
@@ -184,7 +192,7 @@ pub fn split_secret(
     threshold: usize,
     shares: usize,
     rng: &mut impl rand::RngCore,
-) -> Result<(Vec<(u8, [u8; 32])>, [u8; 32]), ShamirError> {
+) -> Result<ShamirSharesWithCommitment, ShamirError> {
     validate_split_params(threshold, shares)?;
 
     let mut share_values = vec![[0u8; 32]; shares];
