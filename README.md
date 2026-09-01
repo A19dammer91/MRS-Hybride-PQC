@@ -672,14 +672,33 @@ Run the Criterion benchmark suite:
 cargo bench --bench sampler_bench
 ```
 
-### Sampling throughput (`u64`)
+### Sampler Benchmark Results
 
-| Scale | Root N | Typical Time |
-|---|---|---|
-| Small | $\sim 10^6$ | < 1 µs |
-| Moderate | $\sim 10^9$ | $\sim 1$ µs |
-| Large | $\sim 10^{12}$ | $\sim 1$–$2$ µs |
-| Max `u64` | $\sim 10^{18}$ | $\sim 2$–$5$ µs |
+Measured on a shared GitHub Actions runner (`ubuntu-latest`) via the CI
+benchmark workflow. Absolute times reflect that specific shared-runner
+environment, not dedicated, isolated hardware — and are not sufficient
+for side-channel claims (see the [Formal Verification](#formal-verification)
+scope note above). Repeated runs on shared runners can show more variance
+(occasionally into the 390–400 µs range) depending on background load;
+the figures below are from a low-noise run and are the more representative
+baseline.
+
+| Benchmark | Root N | Median Time | 95% CI |
+|---|---|---|---|
+| `sample_three_layers/small_1e6` | $\sim 10^6$ | 351.26 µs | [351.03, 351.62] µs |
+| `sample_three_layers/moderate_1e9` | $\sim 10^9$ | 351.57 µs | [351.13, 352.16] µs |
+| `sample_three_layers/large_1e12` | $\sim 10^{12}$ | 351.11 µs | [350.97, 351.28] µs |
+| `sample_three_layers/max_u64_range_1e18` | $\sim 10^{18}$ | 352.03 µs | [351.00, 354.22] µs |
+
+The near-constant timing across six orders of magnitude in `N` is the
+expected result of the $O(1)$ closed-form Crown Equations sampling
+described above: cost does not scale with the size of the public root,
+only with the fixed `DEPTH = 3` layer count.
+
+A handful of measurements per run are flagged by Criterion as mild/severe
+outliers (typically 7–14 out of 100 samples); this is normal scheduling
+noise on a shared, non-isolated CI runner rather than a property of the
+algorithm itself.
 
 ---
 
