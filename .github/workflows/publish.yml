@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch: # Dit voegt de handmatige startknop toe in GitHub Actions
 
 jobs:
   test_and_publish:
@@ -40,3 +41,4 @@ jobs:
 
       - name: Publish to Crates.io
         run: cargo publish --token ${{ secrets.CRATES_TOKEN }}
+      
