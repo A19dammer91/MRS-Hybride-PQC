@@ -16,7 +16,21 @@
 //! Note: this is "constant-time" in the practical software sense (no
 //! secret-dependent branches or memory accesses), not formally verified
 //! against timing leakage at the gate or micro-architecture level.
+//!
+//! # Threshold verification (commitment)
+//! Shamir shares carry no information about the original `threshold`.
+//! Recovering with fewer shares than were originally required does not
+//! fail mathematically — it silently produces an incorrect 32-byte
+//! value. [`split_secret`] therefore also returns a public SHA-256
+//! **commitment** to the original secret; [`recover_secret_checked`]
+//! recomputes that hash after interpolation and rejects the result on
+//! mismatch, turning a silent wrong-answer failure mode into an
+//! explicit [`ShamirError::CommitmentMismatch`]. The commitment is not
+//! secret and may be stored or transmitted alongside (not as part of)
+//! the shares.
 
+use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
 /// Errors that can occur during share splitting or recovery.
@@ -37,6 +51,12 @@ pub enum ShamirError {
     /// secret itself (the point the polynomial is evaluated at during
     /// recovery) and must never be used as a share's x-coordinate.
     InvalidShareIndex,
+    /// The recovered secret's commitment does not match the one supplied
+    /// at split time. This means either too few shares were supplied,
+    /// the wrong shares were supplied, or a share's value was corrupted
+    /// or tampered with — [`recover_secret_checked`] cannot distinguish
+    /// between these causes, only detect that the result is wrong.
+    CommitmentMismatch,
 }
 
 /// AES irreducible polynomial without the x^8 term: x^4 + x^3 + x + 1.
@@ -137,13 +157,34 @@ fn validate_split_params(threshold: usize, shares: usize) -> Result<(), ShamirEr
     Ok(())
 }
 
-/// Split a 32-byte secret into shares.
+/// Compute a public SHA-256 commitment to a 32-byte secret.
+///
+/// This value is NOT secret and reveals nothing about the secret beyond
+/// what a hash normally reveals (i.e. it is safe to store or transmit
+/// alongside shares). It exists purely so that [`recover_secret_checked`]
+/// can detect a wrong-threshold or corrupted-share recovery instead of
+/// silently returning an incorrect secret.
+pub fn commit(secret: &[u8; 32]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"MRS-AUTH-SHAMIR-COMMIT-v1");
+    hasher.update(secret);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&hasher.finalize());
+    out
+}
+
+/// Split a 32-byte secret into shares, returning both the shares and a
+/// public commitment to the original secret.
+///
+/// The commitment must be stored or transmitted alongside the shares
+/// (it is not secret) so that [`recover_secret_checked`] can later
+/// verify that recovery used a sufficient, correct set of shares.
 pub fn split_secret(
     secret: &[u8; 32],
     threshold: usize,
     shares: usize,
     rng: &mut impl rand::RngCore,
-) -> Result<Vec<(u8, [u8; 32])>, ShamirError> {
+) -> Result<(Vec<(u8, [u8; 32])>, [u8; 32]), ShamirError> {
     validate_split_params(threshold, shares)?;
 
     let mut share_values = vec![[0u8; 32]; shares];
@@ -168,10 +209,22 @@ pub fn split_secret(
         result.push(((idx + 1) as u8, value));
         value.zeroize();
     }
-    Ok(result)
+
+    let commitment = commit(secret);
+    Ok((result, commitment))
 }
 
-/// Recover a 32-byte secret from shares.
+/// Recover a 32-byte secret from shares, with NO check that the correct
+/// threshold was met.
+///
+/// # Warning
+/// This function cannot tell whether `shares` meets the original
+/// threshold. Supplying too few (or the wrong) shares does not error —
+/// it silently returns an incorrect 32-byte value. Prefer
+/// [`recover_secret_checked`] wherever a commitment is available, which
+/// is the case for any secret split via [`split_secret`] in this crate.
+/// This unchecked variant remains available for callers who have their
+/// own external verification mechanism.
 pub fn recover_secret(shares: &[(u8, [u8; 32])]) -> Result<[u8; 32], ShamirError> {
     if shares.is_empty() {
         return Err(ShamirError::NoSharesProvided);
@@ -200,6 +253,37 @@ pub fn recover_secret(shares: &[(u8, [u8; 32])]) -> Result<[u8; 32], ShamirError
         secret[byte_idx] = lagrange_at_zero(&points);
     }
     Ok(secret)
+}
+
+/// Recover a 32-byte secret from shares and verify it against a
+/// commitment produced by [`split_secret`].
+///
+/// This is the recommended recovery entry point: unlike
+/// [`recover_secret`], it detects (rather than silently ignores) the
+/// case where too few, the wrong, or corrupted shares were supplied.
+///
+/// # Errors
+/// Returns everything [`recover_secret`] can return, plus
+/// [`ShamirError::CommitmentMismatch`] if the interpolated secret does
+/// not match `expected_commitment`.
+pub fn recover_secret_checked(
+    shares: &[(u8, [u8; 32])],
+    expected_commitment: &[u8; 32],
+) -> Result<[u8; 32], ShamirError> {
+    let mut secret = recover_secret(shares)?;
+    let actual_commitment = commit(&secret);
+
+    // Constant-time comparison: the commitment is public, but comparing
+    // it in a way that depends on secret-derived data with early-exit
+    // logic is an unnecessary habit to avoid in a crate that is
+    // constant-time elsewhere.
+    let matches = actual_commitment.ct_eq(expected_commitment);
+    if matches.unwrap_u8() == 1 {
+        Ok(secret)
+    } else {
+        secret.zeroize();
+        Err(ShamirError::CommitmentMismatch)
+    }
 }
 
 #[cfg(test)]
@@ -263,7 +347,7 @@ mod tests {
     fn shamir_roundtrip_3_of_5() {
         let secret = [0xABu8; 32];
         let mut rng = OsRng;
-        let shares = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
+        let (shares, _commitment) = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
         let subset = vec![shares[0], shares[2], shares[4]];
         let recovered = recover_secret(&subset).expect("recover failed");
         assert_eq!(recovered, secret);
@@ -277,7 +361,7 @@ mod tests {
             0x1D, 0x1E, 0x1F, 0x20,
         ];
         let mut rng = OsRng;
-        let shares = split_secret(&secret, 2, 4, &mut rng).expect("split failed");
+        let (shares, _commitment) = split_secret(&secret, 2, 4, &mut rng).expect("split failed");
         let recovered = recover_secret(&shares).expect("recover failed");
         assert_eq!(recovered, secret);
     }
@@ -286,7 +370,7 @@ mod tests {
     fn shamir_different_subsets_equivalent() {
         let secret = [0xCDu8; 32];
         let mut rng = OsRng;
-        let shares = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
+        let (shares, _commitment) = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
         let subsets = vec![
             vec![shares[0], shares[1], shares[2]],
             vec![shares[1], shares[3], shares[4]],
@@ -358,12 +442,75 @@ mod tests {
     fn recover_with_fewer_than_threshold_gives_wrong_secret_not_error() {
         let secret = [0x42u8; 32];
         let mut rng = OsRng;
-        let shares = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
+        let (shares, _commitment) = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
         let insufficient = vec![shares[0], shares[1]];
         let recovered = recover_secret(&insufficient).expect("recover should not error");
         assert_ne!(
             recovered, secret,
             "recovery with too few shares should not coincidentally match"
+        );
+    }
+
+    // --- Commitment-checked recovery ---
+
+    #[test]
+    fn commit_is_deterministic() {
+        let secret = [0x77u8; 32];
+        assert_eq!(commit(&secret), commit(&secret));
+    }
+
+    #[test]
+    fn commit_differs_for_different_secrets() {
+        let a = [0x01u8; 32];
+        let b = [0x02u8; 32];
+        assert_ne!(commit(&a), commit(&b));
+    }
+
+    #[test]
+    fn checked_roundtrip_succeeds_with_enough_shares() {
+        let secret = [0x99u8; 32];
+        let mut rng = OsRng;
+        let (shares, commitment) = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
+        let subset = vec![shares[0], shares[2], shares[4]];
+        let recovered =
+            recover_secret_checked(&subset, &commitment).expect("checked recover failed");
+        assert_eq!(recovered, secret);
+    }
+
+    #[test]
+    fn checked_recovery_rejects_insufficient_shares() {
+        let secret = [0x42u8; 32];
+        let mut rng = OsRng;
+        let (shares, commitment) = split_secret(&secret, 3, 5, &mut rng).expect("split failed");
+        let insufficient = vec![shares[0], shares[1]];
+        assert_eq!(
+            recover_secret_checked(&insufficient, &commitment),
+            Err(ShamirError::CommitmentMismatch)
+        );
+    }
+
+    #[test]
+    fn checked_recovery_rejects_wrong_commitment() {
+        let secret = [0x11u8; 32];
+        let other_secret = [0x22u8; 32];
+        let mut rng = OsRng;
+        let (shares, _own_commitment) =
+            split_secret(&secret, 3, 5, &mut rng).expect("split failed");
+        let wrong_commitment = commit(&other_secret);
+        let subset = vec![shares[0], shares[1], shares[2]];
+        assert_eq!(
+            recover_secret_checked(&subset, &wrong_commitment),
+            Err(ShamirError::CommitmentMismatch)
+        );
+    }
+
+    #[test]
+    fn checked_recovery_propagates_lower_level_errors() {
+        let commitment = [0u8; 32];
+        let shares: Vec<(u8, [u8; 32])> = vec![];
+        assert_eq!(
+            recover_secret_checked(&shares, &commitment),
+            Err(ShamirError::NoSharesProvided)
         );
     }
 }
