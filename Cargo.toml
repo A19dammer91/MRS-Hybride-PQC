@@ -1,12 +1,12 @@
 [package]
 name = "mrs_auth_pqc"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 authors = ["Billal El Issaoui"]
 description = "Research-grade hybrid post-quantum KEM with Diophantine deniability. Not audited for production use."
 license = "Apache-2.0"
-repository = "https://github.com"
-documentation = "https://docs.rs"
+repository = "https://github.com/A19dammer91/MRS-Hybride-PQC"
+documentation = "https://docs.rs/mrs_auth_pqc"
 readme = "README.md"
 keywords = ["cryptography", "post-quantum", "kyber", "deniability", "diophantine"]
 categories = ["cryptography"]
@@ -31,7 +31,7 @@ sha2 = "0.10"
 hmac = "0.12"
 aes-gcm = "0.10.3"
 
-# CSPRNG sampling in the MRS chain sampler
+# CSPRNG sampling in the MRS chain sampler, and Shamir Secret Sharing
 rand = "0.8"
 
 # Memory-hard KDF for master secret derivation
