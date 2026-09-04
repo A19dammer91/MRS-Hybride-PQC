@@ -7,6 +7,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange?style=flat-square&logo=rust)](https://www.rust-lang.org)
 [![NIST](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20ML--KEM--1024-informational?style=flat-square)](https://csrc.nist.gov/projects/post-quantum-cryptography)
+[![Interactive Demo](https://img.shields.io/badge/demo-security%20game-ff69b4?style=flat-square&logo=googlechrome&logoColor=white)](demo/mrs-auth-security-game.html)
 
 # MRS-AUTH
 
@@ -35,6 +36,7 @@
 - [Active Security Hardening & Formal Games](#active-security-hardening--formal-games)
 - [Formal Verification](#formal-verification)
 - [Benchmarks](#benchmarks)
+- [Interactive Demo](#interactive-demo)
 - [Citation](#citation)
 - [Disclaimer](#disclaimer)
 - [License](#license)
@@ -229,6 +231,10 @@ MRS-Hybride-PQC/
 ├── README.md               # This file
 ├── benches/
 │   └── sampler_bench.rs    # Criterion benchmark suite
+├── demo/
+│   └── mrs-auth-security-game.html  # Interactive browser-based security demo
+├── docs/
+│   └── user-manual.md      # English user manual for the interactive demo
 ├── proofs/                 # EasyCrypt formal verification scripts
 │   ├── MRS_Core.ec         # Diophantine algebra, Popoviciu cardinality, Frobenius bound
 │   ├── MRS_Chain.ec        # Construction and structural verification of MRS chains
@@ -699,6 +705,22 @@ A handful of measurements per run are flagged by Criterion as mild/severe
 outliers (typically 7–14 out of 100 samples); this is normal scheduling
 noise on a shared, non-isolated CI runner rather than a property of the
 algorithm itself.
+
+---
+
+## Interactive Demo
+
+An interactive, browser-based visualization of the security proof —
+covering the Forest Game (Game⁰ vs. Game¹), adaptive attacker strategies,
+per-field distribution histograms, a rolling accuracy timeline, and a
+Shamir Secret Sharing walkthrough — is available in
+[`demo/mrs-auth-security-game.html`](demo/mrs-auth-security-game.html).
+
+No build step, server, or external dependency is required; open the file
+directly in any modern browser (Chrome, Firefox, Safari, Edge).
+
+See [`docs/user-manual.md`](docs/user-manual.md) for a full walkthrough of
+each tab, expected results, and troubleshooting tips.
 
 ---
 
