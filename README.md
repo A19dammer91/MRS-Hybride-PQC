@@ -37,6 +37,7 @@
 - [Formal Verification](#formal-verification)
 - [Benchmarks](#benchmarks)
 - [Interactive Demo](#interactive-demo)
+- [Research Notes](#research-notes)
 - [Citation](#citation)
 - [Disclaimer](#disclaimer)
 - [License](#license)
@@ -234,7 +235,11 @@ MRS-Hybride-PQC/
 ├── demo/
 │   └── mrs-auth-security-game.html  # Interactive browser-based security demo
 ├── docs/
-│   └── user-manual.md      # English user manual for the interactive demo
+│   ├── user-manual.md      # English user manual for the interactive demo
+│   └── research-notes/     # Exploratory ideas, not part of the crate API
+│       ├── 90-366-2520-transformation.md
+│       ├── sampler-90-366.md
+│       └── witness-90-366.md
 ├── proofs/                 # EasyCrypt formal verification scripts
 │   ├── MRS_Core.ec         # Diophantine algebra, Popoviciu cardinality, Frobenius bound
 │   ├── MRS_Chain.ec        # Construction and structural verification of MRS chains
@@ -721,6 +726,30 @@ directly in any modern browser (Chrome, Firefox, Safari, Edge).
 
 See [`docs/user-manual.md`](docs/user-manual.md) for a full walkthrough of
 each tab, expected results, and troubleshooting tips.
+
+---
+
+## Research Notes
+
+Exploratory extensions to the core framework, not implemented in `src/`
+and not part of the crate's API, are documented in
+[`docs/research-notes/`](docs/research-notes/).
+
+The current note explores a transformation that multiplies a witness
+pair by a constant factor of 90, which forces the digital root of every
+resulting number to 9. An accompanying EasyCrypt proof draft formally
+establishes that this transformation preserves the underlying MRS
+equation, and that a bijection exists between the witness space for
+N = 366 and its scaled counterpart at N = 32940, generalizing to a
+larger supergrid at multiples of 2520. The proof further shows that an
+adversary limited to checking digital roots gains no advantage in
+distinguishing an authentic witness from an alibi in the transformed
+space, consistent with the "A₀ Bias" strategy already tested empirically
+in the [interactive demo](#interactive-demo).
+
+- [`90-366-2520-transformation.md`](docs/research-notes/90-366-2520-transformation.md) — the mathematical background and the formal findings
+- [`sampler-90-366.md`](docs/research-notes/sampler-90-366.md) — the draft sampler implementing the transformation
+- [`witness-90-366.md`](docs/research-notes/witness-90-366.md) — the draft authentication layer, including a related time-windowed witness scheme
 
 ---
 
