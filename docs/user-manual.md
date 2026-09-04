@@ -2,9 +2,6 @@
 
 ## Complete Security Dashboard — User Manual
 
-**Author:** Bilal El Issaoui
-**Version:** 1.0
-**Date:** September 4, 2026
 
 ---
 
