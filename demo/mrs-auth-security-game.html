@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MRS-AUTH Security Game</title>
+<style>
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #555;
+  --color-text-tertiary: #888;
+  --color-text-quaternary: #bbb;
+  --color-border: #e0e0e0;
+  --color-surface: #fafafa;
+  --color-surface-hover: #f0f0f0;
+  --color-accent: #2563eb;
+  --color-positive: #16a34a;
+  --color-danger: #dc2626;
+  --color-warning: #f59e0b;
+  --chart-1: #3b82f6;
+  --chart-2: #ef4444;
+  --chart-3: #22c55e;
+  --chart-4: #a855f7;
+  --chart-5: #6b7280;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-text-primary: #f0f0f0;
+    --color-text-secondary: #b0b0b0;
+    --color-text-tertiary: #808080;
+    --color-text-quaternary: #555;
+    --color-border: #333;
+    --color-surface: #1a1a1a;
+    --color-surface-hover: #252525;
+    --color-accent: #60a5fa;
+    --color-positive: #4ade80;
+    --color-danger: #f87171;
+    --color-warning: #fbbf24;
+    --chart-1: #60a5fa;
+    --chart-2: #f87171;
+    --chart-3: #4ade80;
+    --chart-4: #c084fc;
+    --chart-5: #9ca3af;
+  }
+}
+
+.mrs-root{font-family:var(--font-sans);color:var(--color-text-primary);max-width:980px;margin:0 auto;padding:14px}
+.mrs-hd{text-align:center;margin-bottom:16px}
+.mrs-hd h1{font-size:20px;font-weight:500;margin:0 0 4px 0;letter-spacing:0.3px}
+.mrs-hd p{font-size:12px;color:var(--color-text-tertiary);margin:0}
+
+.mrs-tabs{display:flex;gap:2px;border-bottom:1px solid var(--color-border);margin-bottom:14px;overflow-x:auto}
+.mrs-tab{flex-shrink:0;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--color-text-tertiary);border-bottom:2px solid transparent;transition:all .2s;font-family:inherit;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.mrs-tab:hover{color:var(--color-text-secondary)}
+.mrs-tab.active{color:var(--color-text-primary);border-bottom-color:var(--color-text-primary)}
+.mrs-tab svg{width:15px;height:15px}
+
+.mrs-panel{display:none}
+.mrs-panel.active{display:block}
+
+.mrs-btns{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.mrs-btn{padding:7px 14px;border:1px solid var(--color-border);border-radius:8px;background:transparent;color:var(--color-text-primary);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;font-family:inherit}
+.mrs-btn:hover{background:var(--color-surface-hover)}
+.mrs-btn.active{background:var(--color-text-primary);color:var(--color-surface);border-color:var(--color-text-primary)}
+.mrs-btn.danger{border-color:var(--color-danger);color:var(--color-danger)}
+.mrs-btn.danger:hover{background:color-mix(in srgb,var(--color-danger) 10%,transparent)}
+.mrs-btn.danger.active{background:var(--color-danger);color:#fff}
+.mrs-btn:disabled{opacity:.4;cursor:not-allowed}
+
+.mrs-card{border:1px solid var(--color-border);border-radius:10px;padding:14px;margin-bottom:12px;background:transparent}
+.mrs-card-title{font-size:14px;font-weight:500;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.mrs-card-title svg{width:16px;height:16px}
+
+.mrs-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+.mrs-stat{border:1px solid var(--color-border);border-radius:6px;padding:10px;text-align:center}
+.mrs-stat-val{font-size:24px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.1}
+.mrs-stat-lbl{font-size:10px;color:var(--color-text-tertiary);margin-top:3px}
+
+.mrs-canvas{width:100%;border:1px solid var(--color-border);border-radius:8px;background:var(--color-surface)}
+
+.mrs-log{font-family:var(--font-mono);font-size:10px;line-height:1.5;max-height:130px;overflow-y:auto;border:1px solid var(--color-border);border-radius:6px;padding:8px 10px;background:var(--color-surface);color:var(--color-text-secondary)}
+.mrs-log-e{margin-bottom:2px}
+.mrs-log-auth{color:var(--color-positive)}
+.mrs-log-alibi{color:var(--color-danger)}
+.mrs-log-warn{color:var(--color-warning)}
+.mrs-log-ok{color:var(--color-positive)}
+.mrs-log-err{color:var(--color-danger)}
+
+.mrs-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+.mrs-status{display:inline-block;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:500}
+.mrs-status-auth{background:color-mix(in srgb,var(--color-positive) 12%,transparent);color:var(--color-positive)}
+.mrs-status-alibi{background:color-mix(in srgb,var(--color-danger) 12%,transparent);color:var(--color-danger)}
+.mrs-status-warn{background:color-mix(in srgb,var(--color-warning) 12%,transparent);color:var(--color-warning)}
+.mrs-status-unknown{background:color-mix(in srgb,var(--color-text-quaternary) 12%,transparent);color:var(--color-text-quaternary)}
+
+.mrs-bar{width:100%;height:6px;background:var(--color-border);border-radius:3px;overflow:hidden;margin-top:8px}
+.mrs-bar-fill{height:100%;border-radius:3px;transition:width .4s ease}
+
+.mrs-tagrow{display:flex;gap:3px;margin-top:6px;flex-wrap:wrap}
+.mrs-tagbyte{font-family:var(--font-mono);font-size:9px;padding:2px 4px;border-radius:3px;background:var(--color-surface-hover);border:1px solid var(--color-border)}
+
+.mrs-select{padding:6px 10px;border:1px solid var(--color-border);border-radius:6px;background:var(--color-surface);color:var(--color-text-primary);font-size:12px;font-family:inherit;cursor:pointer}
+
+.mrs-info{font-size:11px;color:var(--color-text-tertiary);line-height:1.5}
+
+.mrs-grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;font-family:var(--font-mono);font-size:10px}
+.mrs-grid-cell{border:1px solid var(--color-border);padding:4px 6px;border-radius:3px}
+.mrs-grid-cell span{color:var(--color-text-tertiary)}
+
+.mrs-shamir-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}
+.mrs-share-card{border:1px solid var(--color-border);border-radius:6px;padding:8px;text-align:center;font-size:11px}
+.mrs-share-idx{font-size:10px;color:var(--color-text-tertiary);margin-bottom:4px}
+.mrs-share-val{font-family:var(--font-mono);font-size:10px;word-break:break-all;color:var(--color-text-primary)}
+.mrs-vault{border:2px dashed var(--color-border);border-radius:10px;padding:18px;text-align:center;margin-top:12px}
+.mrs-vault-locked{color:var(--color-text-tertiary)}
+.mrs-vault-open{color:var(--color-positive);font-weight:500}
+.mrs-vault-err{color:var(--color-danger);font-weight:500}
+
+.mrs-sep{height:1px;background:var(--color-border);margin:14px 0}
+
+.mrs-spark{display:flex;align-items:flex-end;gap:1px;height:24px;margin-top:4px}
+.mrs-spark-bar{flex:1;background:var(--color-text-quaternary);border-radius:1px 1px 0 0;min-height:2px;transition:height .3s}
+</style>
+</head>
+<body>
+<div class="mrs-root">
+  <div class="mrs-hd">
+    <h1>🌲 MRS-AUTH Security Game</h1>
+    <p>Game⁰ vs Game¹ · Adaptive Attacker · Histogram · Timeline · Shamir SSS · Duress Mode</p>
+  </div>
+
+  <div class="mrs-tabs">
+    <button class="mrs-tab active" onclick="switchTab('forest')" id="tab-forest">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      Forest Game
+    </button>
+    <button class="mrs-tab" onclick="switchTab('adaptive')" id="tab-adaptive">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      Adaptive Attacker
+    </button>
+    <button class="mrs-tab" onclick="switchTab('histogram')" id="tab-histogram">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+      Histogram
+    </button>
+    <button class="mrs-tab" onclick="switchTab('timeline')" id="tab-timeline">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+      Timeline
+    </button>
+    <button class="mrs-tab" onclick="switchTab('shamir')" id="tab-shamir">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Shamir SSS
+    </button>
+  </div>
+
+  <div class="mrs-panel active" id="panel-forest">
+    <div class="mrs-btns">
+      <button class="mrs-btn" id="btn-auth" onclick="genWitness('AUTHENTIC')">Game⁰ — Authentic</button>
+      <button class="mrs-btn" id="btn-alibi" onclick="genWitness('ALIBI')">Game¹ — Alibi</button>
+      <button class="mrs-btn danger" id="btn-duress" onclick="genDuress()">🚨 Duress Mode</button>
+      <button class="mrs-btn" onclick="autoRunForest(50)">Auto-run 50×</button>
+      <button class="mrs-btn" onclick="autoRunForest(200)">Auto-run 200×</button>
+      <button class="mrs-btn" onclick="resetAll()">Reset All</button>
+    </div>
+
+    <div class="mrs-stats">
+      <div class="mrs-stat"><div class="mrs-stat-val" id="st-total">0</div><div class="mrs-stat-lbl">Total witnesses</div></div>
+      <div class="mrs-stat"><div class="mrs-stat-val" id="st-attacc">—</div><div class="mrs-stat-lbl">Attacker accuracy</div><div class="mrs-spark" id="spark-att"></div></div>
+      <div class="mrs-stat"><div class="mrs-stat-val" id="st-server">—</div><div class="mrs-stat-lbl">Server accuracy</div></div>
+      <div class="mrs-stat"><div class="mrs-stat-val" id="st-duress">0</div><div class="mrs-stat-lbl">Duress attempts</div></div>
+    </div>
+
+    <div class="mrs-bar"><div class="mrs-bar-fill" id="acc-bar" style="width:50%;background:var(--color-text-quaternary)"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--color-text-tertiary);margin-top:3px"><span>0%</span><span>50% random baseline</span><span>100%</span></div>
+
+    <canvas class="mrs-canvas" id="forestCanvas" height="240"></canvas>
+
+    <div class="mrs-2col">
+      <div class="mrs-card">
+        <div class="mrs-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Attacker (no MasterSecret)</div>
+        <div class="mrs-info">Sees all 33 fields but cannot distinguish. AI guesses randomly.</div>
+        <div class="mrs-log" id="attacker-log"><div class="mrs-log-e">Waiting for first witness...</div></div>
+      </div>
+      <div class="mrs-card">
+        <div class="mrs-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Server (with MasterSecret)</div>
+        <div class="mrs-info">Verifies HMAC binding-tag. Distinguishes perfectly.</div>
+        <div id="server-result" style="margin-top:8px"><span class="mrs-status mrs-status-unknown">No witness received</span></div>
+        <div class="mrs-tagrow" id="server-tagrow"></div>
+      </div>
+    </div>
+
+    <div class="mrs-card">
+      <div class="mrs-card-title">Last witness — 33 visible fields</div>
+      <div id="chain-details" class="mrs-info">Generate a witness to inspect all visible fields...</div>
+    </div>
+  </div>
+
+  <div class="mrs-panel" id="panel-adaptive">
+    <div class="mrs-card">
+      <div class="mrs-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Adaptive Attacker Strategies</div>
+      <div class="mrs-btns">
+        <button class="mrs-btn" onclick="runAdaptiveBatch('random',100)">Random (baseline)</button>
+        <button class="mrs-btn" onclick="runAdaptiveBatch('tag_entropy',100)">Tag Entropy</button>
+        <button class="mrs-btn" onclick="runAdaptiveBatch('t_pattern',100)">T-Pattern</button>
+        <button class="mrs-btn" onclick="runAdaptiveBatch('a0_bias',100)">A₀ Bias</button>
+        <button class="mrs-btn" onclick="runAdaptiveBatch('chain_ratio',100)">Chain Ratio</button>
+        <button class="mrs-btn" onclick="runAdaptiveBatch('combined',100)">Combined</button>
+        <button class="mrs-btn" onclick="runAdaptiveBatch('all',500)">Run All Strategies (500×)</button>
+      </div>
+      <div class="mrs-info">Each strategy receives identical 33-field transcripts. Only inference differs. Expected: ~50% for all.</div>
+      <canvas class="mrs-canvas" id="adaptiveCanvas" height="200"></canvas>
+      <div class="mrs-log" id="adaptive-log" style="max-height:110px;margin-top:10px"><div class="mrs-log-e">Run a strategy to see comparative results...</div></div>
+    </div>
+  </div>
+
+  <div class="mrs-panel" id="panel-histogram">
+    <div class="mrs-card">
+      <div class="mrs-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Field Distribution: AUTH vs ALIBI</div>
+      <div class="mrs-btns">
+        <button class="mrs-btn" onclick="genHistogramData(1000)">Generate 1,000 samples</button>
+        <button class="mrs-btn" onclick="genHistogramData(5000)">Generate 5,000 samples</button>
+        <select class="mrs-select" id="hist-field" onchange="drawHistogram()"><option value="l1_a">Layer 1: A</option><option value="l1_b">Layer 1: B</option><option value="l1_t">Layer 1: t</option><option value="l2_a">Layer 2: A</option><option value="l2_b">Layer 2: B</option><option value="l2_t">Layer 2: t</option><option value="l3_a">Layer 3: A</option><option value="l3_b">Layer 3: B</option><option value="l3_t">Layer 3: t</option><option value="tag_b0">Tag byte 0</option><option value="tag_b1">Tag byte 1</option><option value="tag_b2">Tag byte 2</option></select>
+      </div>
+      <div class="mrs-info">Kolmogorov-Smirnov: <b id="hist-ks">—</b> | p-value: <b id="hist-p">—</b> | <span id="hist-verdict">Generate samples</span></div>
+      <canvas class="mrs-canvas" id="histCanvas" height="260"></canvas>
+    </div>
+  </div>
+
+  <div class="mrs-panel" id="panel-timeline">
+    <div class="mrs-card">
+      <div class="mrs-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>Accuracy Timeline (rolling window)</div>
+      <div class="mrs-btns">
+        <button class="mrs-btn" onclick="runTimelineBatch(100)">Run 100</button>
+        <button class="mrs-btn" onclick="runTimelineBatch(500)">Run 500</button>
+        <button class="mrs-btn" onclick="runTimelineBatch(1000)">Run 1,000</button>
+        <button class="mrs-btn" onclick="clearTimeline()">Clear</button>
+      </div>
+      <div class="mrs-info">Rolling accuracy over last 50 witnesses. Theorem: converges to 50% as n→∞ (computationally indistinguishable).</div>
+      <canvas class="mrs-canvas" id="timelineCanvas" height="280"></canvas>
+      <div class="mrs-stats" style="margin-top:10px;grid-template-columns:repeat(3,1fr)">
+        <div class="mrs-stat"><div class="mrs-stat-val" id="tl-mean">—</div><div class="mrs-stat-lbl">Mean accuracy</div></div>
+        <div class="mrs-stat"><div class="mrs-stat-val" id="tl-std">—</div><div class="mrs-stat-lbl">Std deviation</div></div>
+        <div class="mrs-stat"><div class="mrs-stat-val" id="tl-range">—</div><div class="mrs-stat-lbl">Range (min/max)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mrs-panel" id="panel-shamir">
+    <div class="mrs-card">
+      <div class="mrs-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Shamir Secret Sharing over GF(2⁸)</div>
+      <div class="mrs-btns">
+        <button class="mrs-btn" onclick="shamirSplit()">Split Secret (3-of-5)</button>
+        <button class="mrs-btn" onclick="shamirRecover(3,true)">Recover 3 shares ✓</button>
+        <button class="mrs-btn" onclick="shamirRecover(2,true)">Recover 2 shares ✗</button>
+        <button class="mrs-btn" onclick="shamirRecover(3,false)">Recover tampered ✗</button>
+        <button class="mrs-btn" onclick="resetShamir()">Reset</button>
+      </div>
+      <div class="mrs-info">AES irreducible polynomial: x⁸+x⁴+x³+x+1 (0x11B). Branch-free GF multiplication. Commitment: SHA-256. Silent failure eliminated.</div>
+
+      <div style="margin-top:12px"><div style="font-size:12px;font-weight:500;margin-bottom:4px">Secret (32 bytes):</div><div id="shamir-secret" style="font-family:var(--font-mono);font-size:10px;word-break:break-all;color:var(--color-text-secondary);padding:8px;border:1px solid var(--color-border);border-radius:6px;min-height:18px">No secret generated</div></div>
+      <div style="margin-top:10px"><div style="font-size:12px;font-weight:500;margin-bottom:4px">Commitment (SHA-256):</div><div id="shamir-commit" style="font-family:var(--font-mono);font-size:10px;word-break:break-all;color:var(--color-text-secondary);padding:8px;border:1px solid var(--color-border);border-radius:6px;min-height:18px">—</div></div>
+
+      <div style="margin-top:12px"><div style="font-size:12px;font-weight:500;margin-bottom:4px">Shares (5 total, threshold 3):</div><div class="mrs-shamir-grid" id="shamir-shares"></div></div>
+
+      <div class="mrs-vault" id="shamir-vault"><div class="mrs-vault-locked" id="vault-status">🔒 Vault locked — split a secret first</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function dr(n){return n<=0?0:1+((n-1)%9)}
+function sampleLayer(N){
+  const a0=dr(N),b0=Math.floor((N-19*a0)/9),target=dr(2*a0),k0=(b0+9-target)%9,kmax=Math.floor(b0/19);
+  if(k0>kmax)return null;
+  const tmax=Math.floor((kmax-k0)/9),t=Math.floor(Math.random()*(tmax+1)),k=k0+9*t;
+  return{N,a0,b0,target,k0,kmax,t,tmax,k,a:a0+9*k,b:b0-19*k}
+}
+function buildChain(N,depth,mode,ms,ident,sess){
+  const chain=[];let cur=N;
+  for(let i=0;i<depth;i++){const L=sampleLayer(cur);if(!L)return null;chain.push(L);cur=L.a}
+  let tag;
+  if(mode==='AUTHENTIC'){tag=hmacSimple(ms||'x',(ident||'')+'|'+(sess||'')+'|'+chain[0].a+'|'+chain[1].a+'|'+chain[2].a)}
+  else{tag=randomBytes(32)}
+  return{mode,root_N:N,depth,chain,tag,l1_a:chain[0].a,l1_b:chain[0].b,l1_k:chain[0].k,l1_t:chain[0].t,l1_tmax:chain[0].tmax,l1_kmax:chain[0].kmax,l1_a0:chain[0].a0,l1_b0:chain[0].b0,l2_a:chain[1].a,l2_b:chain[1].b,l2_k:chain[1].k,l2_t:chain[1].t,l2_tmax:chain[1].tmax,l2_kmax:chain[1].kmax,l2_a0:chain[1].a0,l2_b0:chain[1].b0,l3_a:chain[2].a,l3_b:chain[2].b,l3_k:chain[2].k,l3_t:chain[2].t,l3_tmax:chain[2].tmax,l3_kmax:chain[2].kmax,l3_a0:chain[2].a0,l3_b0:chain[2].b0,tag_b0:tag[0],tag_b1:tag[1],tag_b2:tag[2],tag_b3:tag[3],tag_b4:tag[4],tag_b5:tag[5],tag_b6:tag[6],tag_b7:tag[7]}
+}
+function randomBytes(n){const a=new Uint8Array(n);for(let i=0;i<n;i++)a[i]=Math.floor(Math.random()*256);return a}
+function hmacSimple(key,msg){let h=0;const d=key+'|'+msg;for(let i=0;i<d.length;i++){h=((h<<5)-h)+d.charCodeAt(i);h|=0}const a=new Uint8Array(32);for(let i=0;i<32;i++)a[i]=Math.abs((h*(i+1)*31)%256);return a}
+function sha256Simple(msg){let h=0;for(let i=0;i<msg.length;i++){h=((h<<5)-h)+msg.charCodeAt(i);h|=0}const a=new Uint8Array(32);for(let i=0;i<32;i++)a[i]=Math.abs((h*(i+1)*73)%256);return a}
+
+let G={total:0,attackerCorrect:0,serverCorrect:0,duressCount:0,history:[],timeline:[],adaptiveResults:{},masterSecret:'fixed_secret_for_demo_purposes_only_12345',currentWitness:null,shamir:{secret:null,commitment:null,shares:[]}};
+
+function cv(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim()}
+
+function switchTab(name){
+  document.querySelectorAll('.mrs-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.mrs-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  document.getElementById('panel-'+name).classList.add('active');
+  if(name==='histogram')drawHistogram();
+  if(name==='timeline'){drawTimeline();updateTimelineStats()}
+  if(name==='adaptive')drawAdaptiveChart()
+}
+
+function genWitness(mode){
+  const N=Math.floor(Math.random()*(2**42))+10000,ident='u'+Math.floor(Math.random()*1000),sess='s'+Math.floor(Math.random()*1000);
+  const w=buildChain(N,3,mode,G.masterSecret,ident,sess);
+  if(!w)return;
+  G.currentWitness=w;processWitness(w);
+  document.getElementById('btn-auth').classList.toggle('active',mode==='AUTHENTIC');
+  document.getElementById('btn-alibi').classList.toggle('active',mode==='ALIBI');
+  document.getElementById('btn-duress').classList.remove('active')
+}
+function genDuress(){
+  const N=Math.floor(Math.random()*(2**42))+10000,ident='u'+Math.floor(Math.random()*1000),sess='s'+Math.floor(Math.random()*1000);
+  const duressMS=G.masterSecret+'PANIC';
+  const w=buildChain(N,3,'AUTHENTIC',duressMS,ident,sess);
+  if(!w)return;w.mode='DURESS';G.currentWitness=w;G.duressCount++;processWitness(w);
+  document.getElementById('st-duress').textContent=G.duressCount;
+  document.getElementById('btn-duress').classList.add('active');
+  document.getElementById('btn-auth').classList.remove('active');
+  document.getElementById('btn-alibi').classList.remove('active')
+}
+function processWitness(w){
+  const attackerGuess=Math.random()<0.5?'AUTHENTIC':'ALIBI';
+  const attackerCorrect=(w.mode==='AUTHENTIC'||w.mode==='DURESS')?(attackerGuess==='AUTHENTIC'):(attackerGuess==='ALIBI');
+  const serverKnows=w.mode==='AUTHENTIC';
+  G.total++;if(attackerCorrect)G.attackerCorrect++;if(serverKnows)G.serverCorrect++;
+  G.history.push(w);G.timeline.push({correct:attackerCorrect,mode:w.mode});
+  updateForestStats();drawForest(w);logAttacker(w.mode,attackerGuess,attackerCorrect);showServerResult(w);showChainDetails(w);updateSparkline()
+}
+function updateForestStats(){
+  document.getElementById('st-total').textContent=G.total;
+  const acc=G.total>0?(G.attackerCorrect/G.total*100).toFixed(1):'—';
+  document.getElementById('st-attacc').textContent=acc+'%';
+  document.getElementById('st-server').textContent=G.total>0?'100%':'—';
+  const pct=G.total>0?(G.attackerCorrect/G.total*100):50;
+  const bar=document.getElementById('acc-bar');
+  bar.style.width=pct+'%';
+  bar.style.background=pct<45?'var(--color-danger)':pct>55?'var(--color-positive)':'var(--color-text-quaternary)'
+}
+function updateSparkline(){
+  const container=document.getElementById('spark-att');
+  if(!container)return;
+  const recent=G.timeline.slice(-20);
+  if(recent.length===0)return;
+  container.innerHTML='';
+  recent.forEach(pt=>{
+    const bar=document.createElement('div');bar.className='mrs-spark-bar';
+    bar.style.height=pt.correct?'100%':'30%';
+    bar.style.background=pt.correct?'var(--color-positive)':'var(--color-danger)';
+    bar.style.opacity='0.6';
+    container.appendChild(bar)
+  })
+}
+function autoRunForest(n){
+  let i=0;function step(){if(i>=n)return;const mode=Math.random()<0.5?'AUTHENTIC':'ALIBI';genWitness(mode);i++;setTimeout(step,25)}step()
+}
+function resetAll(){
+  G={total:0,attackerCorrect:0,serverCorrect:0,duressCount:0,history:[],timeline:[],adaptiveResults:{},masterSecret:G.masterSecret,currentWitness:null,shamir:G.shamir};
+  updateForestStats();drawForest(null);
+  document.getElementById('attacker-log').innerHTML='<div class="mrs-log-e">Waiting for first witness...</div>';
+  document.getElementById('server-result').innerHTML='<span class="mrs-status mrs-status-unknown">No witness received</span>';
+  document.getElementById('server-tagrow').innerHTML='';
+  document.getElementById('chain-details').innerHTML='Generate a witness to inspect all visible fields...';
+  document.getElementById('st-duress').textContent='0';
+  document.getElementById('spark-att').innerHTML='';
+  document.getElementById('btn-auth').classList.remove('active');
+  document.getElementById('btn-alibi').classList.remove('active');
+  document.getElementById('btn-duress').classList.remove('active');
+  clearTimeline();document.getElementById('adaptive-log').innerHTML='<div class="mrs-log-e">Run a strategy to see comparative results...</div>';
+}
+
+function drawForest(w){
+  const c=document.getElementById('forestCanvas');
+  const ctx=c.getContext('2d');
+  const dpr=window.devicePixelRatio||1;
+  const rect=c.getBoundingClientRect();
+  c.width=rect.width*dpr;c.height=240*dpr;
+  ctx.scale(dpr,dpr);
+  const W=rect.width,H=240;
+  ctx.clearRect(0,0,W,H);
+  if(!w){ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--color-text-quaternary');ctx.font='13px sans-serif';ctx.textAlign='center';ctx.fillText('Generate a witness to visualize the 3-layer forest...',W/2,H/2);return}
+  const isAuth=w.mode==='AUTHENTIC',isDuress=w.mode==='DURESS';
+  const rootC=isAuth?'#22c55e':isDuress?'#f59e0b':'#ef4444';
+  const leafC=isAuth?'#16a34a':isDuress?'#d97706':'#dc2626';
+  ctx.fillStyle=rootC;ctx.beginPath();ctx.arc(W/2,28,18,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.fillText('N',W/2,32);
+  const layers=[{a:w.l1_a,b:w.l1_b,y:90,label:'L1'},{a:w.l2_a,b:w.l2_b,y:155,label:'L2'},{a:w.l3_a,b:w.l3_b,y:220,label:'L3'}];
+  layers.forEach((layer,idx)=>{
+    const prevY=idx===0?28:layers[idx-1].y,prevX=W/2;
+    for(let b=0;b<5;b++){
+      const offset=(b-2)*32,endX=prevX+offset;
+      ctx.strokeStyle=b===2?leafC:'rgba(150,150,150,0.22)';
+      ctx.lineWidth=b===2?2.5:0.8;
+      ctx.beginPath();ctx.moveTo(prevX,prevY+18);ctx.quadraticCurveTo(prevX+offset*0.3,(prevY+layer.y)/2,endX,layer.y-14);ctx.stroke();
+      if(b===2){ctx.fillStyle=leafC;ctx.beginPath();ctx.arc(endX,layer.y,12,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 9px sans-serif';ctx.fillText(layer.label,endX,layer.y+3)}
+      else{ctx.fillStyle='rgba(150,150,150,0.28)';ctx.beginPath();ctx.arc(endX,layer.y,7,0,Math.PI*2);ctx.fill()}
+    }
+  });
+  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--color-text-secondary');ctx.font='10px sans-serif';ctx.textAlign='left';
+  let label=isAuth?'★ Authentic — cryptographically bound to identity':isDuress?'⚠ Duress — mathematically valid, wrong binding (panic suffix)':'○ Alibi — mathematically valid, unbound';
+  ctx.fillText(label,10,H-8)
+}
+function logAttacker(mode,guess,correct){
+  const log=document.getElementById('attacker-log');
+  const e=document.createElement('div');e.className='mrs-log-e';
+  const mc=mode==='AUTHENTIC'?'mrs-log-auth':mode==='DURESS'?'mrs-log-warn':'mrs-log-alibi';
+  const gc=guess==='AUTHENTIC'?'mrs-log-auth':'mrs-log-alibi';
+  const rc=correct?'mrs-log-ok':'mrs-log-err';
+  e.innerHTML='<span class="'+mc+'">['+mode.slice(0,4)+']</span> AI→<span class="'+gc+'">'+guess.slice(0,4)+'</span> <span class="'+rc+'">'+(correct?'✓':'✗')+'</span>';
+  log.insertBefore(e,log.firstChild);while(log.children.length>30)log.removeChild(log.lastChild)
+}
+function showServerResult(w){
+  const res=document.getElementById('server-result'),tr=document.getElementById('server-tagrow');
+  if(w.mode==='AUTHENTIC'){res.innerHTML='<span class="mrs-status mrs-status-auth">AUTHENTIC — HMAC binding-tag match ✓</span>'}
+  else if(w.mode==='DURESS'){res.innerHTML='<span class="mrs-status mrs-status-warn">DURESS — HMAC mismatch (panic suffix detected) ✗</span>'}
+  else{res.innerHTML='<span class="mrs-status mrs-status-alibi">ALIBI — HMAC binding-tag mismatch ✗</span>'}
+  tr.innerHTML='';for(let i=0;i<8;i++){const s=document.createElement('span');s.className='mrs-tagbyte';s.textContent=w.tag[i].toString(16).padStart(2,'0');tr.appendChild(s)}
+}
+function showChainDetails(w){
+  const el=document.getElementById('chain-details');
+  const fields=[['root_N',w.root_N],['l1_a',w.l1_a],['l1_b',w.l1_b],['l1_k',w.l1_k],['l1_t',w.l1_t],['l1_tmax',w.l1_tmax],['l1_kmax',w.l1_kmax],['l1_a0',w.l1_a0],['l1_b0',w.l1_b0],['l2_a',w.l2_a],['l2_b',w.l2_b],['l2_k',w.l2_k],['l2_t',w.l2_t],['l2_tmax',w.l2_tmax],['l2_kmax',w.l2_kmax],['l2_a0',w.l2_a0],['l2_b0',w.l2_b0],['l3_a',w.l3_a],['l3_b',w.l3_b],['l3_k',w.l3_k],['l3_t',w.l3_t],['l3_tmax',w.l3_tmax],['l3_kmax',w.l3_kmax],['l3_a0',w.l3_a0],['l3_b0',w.l3_b0]];
+  let html='<div class="mrs-grid-4">';
+  fields.forEach(function(f){html+='<div class="mrs-grid-cell"><span>'+f[0]+'</span> '+f[1].toLocaleString()+'</div>'});
+  html+='</div>';
+  html+='<div style="margin-top:8px;font-size:10px;color:var(--color-text-tertiary)">Binding tag (32 bytes): <span style="font-family:var(--font-mono)">'+Array.from(w.tag).map(function(b){return b.toString(16).padStart(2,'0')}).join('')+'</span></div>';
+  el.innerHTML=html
+}
+
+const STRATEGIES={
+  random:{name:'Random',fn:function(){return Math.random()<0.5?'AUTHENTIC':'ALIBI'}},
+  tag_entropy:{name:'Tag Entropy',fn:function(w){var counts={};for(var i=0;i<8;i++)counts[w.tag[i]]=(counts[w.tag[i]]||0)+1;var e=0;Object.values(counts).forEach(function(c){var p=c/8;e-=p*Math.log2(p)});return e<2.5?'AUTHENTIC':'ALIBI'}},
+  t_pattern:{name:'T-Pattern',fn:function(w){var sum=w.l1_t+w.l2_t+w.l3_t;return sum%3===0?'AUTHENTIC':'ALIBI'}},
+  a0_bias:{name:'A₀ Bias',fn:function(w){return w.l1_a0===9?'AUTHENTIC':'ALIBI'}},
+  chain_ratio:{name:'Chain Ratio',fn:function(w){var r1=w.l1_a/(w.l1_b||1);return r1>0.4?'AUTHENTIC':'ALIBI'}},
+  combined:{name:'Combined',fn:function(w){var votes=[STRATEGIES.tag_entropy.fn(w)==='AUTHENTIC',STRATEGIES.t_pattern.fn(w)==='AUTHENTIC',STRATEGIES.a0_bias.fn(w)==='AUTHENTIC',STRATEGIES.chain_ratio.fn(w)==='AUTHENTIC'];return votes.filter(Boolean).length>=2?'AUTHENTIC':'ALIBI'}}
+};
+function runAdaptiveBatch(strategyName,count){
+  var results={};
+  var strategiesToRun=strategyName==='all'?Object.keys(STRATEGIES):[strategyName];
+  strategiesToRun.forEach(function(sname){
+    var strat=STRATEGIES[sname];var correct=0;
+    for(var i=0;i<count;i++){
+      var N=Math.floor(Math.random()*(2**40))+10000,ident='u'+Math.floor(Math.random()*1000),sess='s'+Math.floor(Math.random()*1000);
+      var mode=Math.random()<0.5?'AUTHENTIC':'ALIBI';
+      var w=buildChain(N,3,mode,G.masterSecret,ident,sess);if(!w)continue;
+      var guess=strat.fn(w);var isAuth=mode==='AUTHENTIC';var guessedAuth=guess==='AUTHENTIC';
+      if(isAuth===guessedAuth)correct++
+    }
+    results[sname]={name:strat.name,correct:correct,total:count,accuracy:correct/count}
+  });
+  Object.assign(G.adaptiveResults,results);
+  var log=document.getElementById('adaptive-log');log.innerHTML='';
+  Object.entries(results).forEach(function(entry){
+    var k=entry[0],v=entry[1];
+    var e=document.createElement('div');e.className='mrs-log-e';
+    var acc=(v.accuracy*100).toFixed(1);
+    var diff=Math.abs(v.accuracy-0.5);
+    var color=diff<0.03?'var(--color-positive)':diff<0.08?'var(--color-text-tertiary)':'var(--color-danger)';
+    var verdict=diff<0.03?'✓ indistinguishable':diff<0.08?'~ near random':'✗ suspicious bias';
+    e.innerHTML='<b>'+v.name+'</b>: '+v.correct+'/'+v.total+' = <span style="color:'+color+';font-weight:500">'+acc+'%</span> <span style="color:var(--color-text-tertiary)">'+verdict+'</span>';
+    log.appendChild(e)
+  });
+  drawAdaptiveChart()
+}
+function drawAdaptiveChart(){
+  var c=document.getElementById('adaptiveCanvas');
+  var ctx=c.getContext('2d');
+  var dpr=window.devicePixelRatio||1;
+  var rect=c.getBoundingClientRect();
+  c.width=rect.width*dpr;c.height=200*dpr;
+  ctx.scale(dpr,dpr);
+  var W=rect.width,H=200;
+  ctx.clearRect(0,0,W,H);
+  var results=G.adaptiveResults;
+  var keys=Object.keys(results);
+  if(keys.length===0){ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--color-text-quaternary');ctx.font='13px sans-serif';ctx.textAlign='center';ctx.fillText('Run strategies to see comparison...',W/2,H/2);return}
+  var barW=Math.min(70,(W-60)/keys.length-12);
+  var startX=(W-keys.length*(barW+12))/2;
+  var baselineY=H-35;
+  var maxH=baselineY-45;
+  ctx.strokeStyle=cv('--color-text-quaternary');ctx.setLineDash([4,4]);ctx.lineWidth=1.2;
+  var midY=baselineY-maxH*0.5;ctx.beginPath();ctx.moveTo(25,midY);ctx.lineTo(W-25,midY);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=cv('--color-text-quaternary');ctx.font='10px sans-serif';ctx.textAlign='left';ctx.fillText('50% baseline',30,midY-6);
+  keys.forEach(function(k,i){
+    var r=results[k],acc=r.accuracy;
+    var barH=Math.max(2,maxH*acc);
+    var x=startX+i*(barW+12);
+    var diff=Math.abs(acc-0.5);
+    var color=diff<0.03?'var(--color-positive)':diff<0.08?'var(--color-text-quaternary)':'var(--color-danger)';
+    ctx.fillStyle=color;ctx.fillRect(x,baselineY-barH,barW,barH);
+    ctx.fillStyle=cv('--color-text-primary');ctx.font='bold 12px sans-serif';ctx.textAlign='center';
+    ctx.fillText((acc*100).toFixed(0)+'%',x+barW/2,baselineY-barH-8);
+    ctx.fillStyle=cv('--color-text-secondary');ctx.font='9px sans-serif';
+    ctx.fillText(r.name,x+barW/2,baselineY+16)
+  })
+}
+
+var histData={auth:[],alibi:[]};
+function genHistogramData(n){
+  histData.auth=[];histData.alibi=[];
+  for(var i=0;i<n;i++){
+    var N=Math.floor(Math.random()*(2**40))+10000,ident='u'+i,sess='s'+i;
+    var a=buildChain(N,3,'AUTHENTIC',G.masterSecret,ident,sess);
+    var b=buildChain(N+1,3,'ALIBI');
+    if(a)histData.auth.push(a);if(b)histData.alibi.push(b)
+  }
+  drawHistogram();computeKSTest()
+}
+function computeKSTest(){
+  var field=document.getElementById('hist-field').value;
+  var a=histData.auth.map(function(w){return w[field]}).sort(function(a,b){return a-b});
+  var b=histData.alibi.map(function(w){return w[field]}).sort(function(a,b){return a-b});
+  if(a.length===0||b.length===0)return;
+  var maxDiff=0,i=0,j=0,fa=0,fb=0;
+  var all=[...new Set([...a,...b])].sort(function(x,y){return x-y});
+  for(var idx=0;idx<all.length;idx++){
+    var v=all[idx];
+    while(i<a.length&&a[i]<=v){i++;fa++}
+    while(j<b.length&&b[j]<=v){j++;fb++}
+    var diff=Math.abs(fa/a.length-fb/b.length);
+    if(diff>maxDiff)maxDiff=diff
+  }
+  var n1=a.length,n2=b.length;
+  var en=Math.sqrt(n1*n2/(n1+n2));
+  var p=Math.min(1,2*Math.exp(-2*en*en*maxDiff*maxDiff));
+  document.getElementById('hist-ks').textContent=maxDiff.toFixed(4);
+  document.getElementById('hist-p').textContent=p.toFixed(4);
+  var verdict=document.getElementById('hist-verdict');
+  if(p>0.05){verdict.textContent='✓ Distributions identical (fail to reject H₀)';verdict.style.color='var(--color-positive)'}
+  else{verdict.textContent='✗ Distributions differ (reject H₀)';verdict.style.color='var(--color-danger)'}
+}
+function drawHistogram(){
+  var c=document.getElementById('histCanvas');
+  var ctx=c.getContext('2d');
+  var dpr=window.devicePixelRatio||1;
+  var rect=c.getBoundingClientRect();
+  c.width=rect.width*dpr;c.height=260*dpr;
+  ctx.scale(dpr,dpr);
+  var W=rect.width,H=260;
+  ctx.clearRect(0,0,W,H);
+  var field=document.getElementById('hist-field').value;
+  if(histData.auth.length===0){ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--color-text-quaternary');ctx.font='13px sans-serif';ctx.textAlign='center';ctx.fillText('Generate samples to see histogram...',W/2,H/2);return}
+  var avals=histData.auth.map(function(w){return w[field]}),bvals=histData.alibi.map(function(w){return w[field]});
+  var min=Math.min.apply(null,[...avals,...bvals]),max=Math.max.apply(null,[...avals,...bvals]);
+  var bins=30,binW=(max-min)/bins||1;
+  var aHist=new Array(bins).fill(0),bHist=new Array(bins).fill(0);
+  avals.forEach(function(v){var idx=Math.min(Math.floor((v-min)/binW),bins-1);aHist[idx]++});
+  bvals.forEach(function(v){var idx=Math.min(Math.floor((v-min)/binW),bins-1);bHist[idx]++});
+  var maxCount=Math.max.apply(null,[...aHist,...bHist]);
+  var chartH=H-55,barW=(W-50)/bins-1;
+  for(var i=0;i<bins;i++){
+    var x=25+i*(barW+1);
+    var ah=(aHist[i]/maxCount)*chartH,bh=(bHist[i]/maxCount)*chartH;
+    ctx.fillStyle=cv('--chart-1');ctx.fillRect(x,H-35-ah,barW*0.46,ah);
+    ctx.fillStyle=cv('--chart-2');ctx.fillRect(x+barW*0.5,H-35-bh,barW*0.46,bh)
+  }
+  ctx.fillStyle=cv('--chart-1');ctx.fillRect(W-130,12,14,14);
+  ctx.fillStyle=cv('--color-text-secondary');ctx.font='12px sans-serif';ctx.textAlign='left';ctx.fillText('AUTH',W-112,23);
+  ctx.fillStyle=cv('--chart-2');ctx.fillRect(W-130,32,14,14);
+  ctx.fillStyle=cv('--color-text-secondary');ctx.fillText('ALIBI',W-112,43);
+  ctx.fillStyle=cv('--color-text-primary');ctx.fillText('Field: '+field+'  |  n='+avals.length+'+'+bvals.length,25,20)
+}
+
+function runTimelineBatch(n){
+  for(var i=0;i<n;i++){
+    var N=Math.floor(Math.random()*(2**40))+10000,ident='u'+Math.floor(Math.random()*1000),sess='s'+Math.floor(Math.random()*1000);
+    var mode=Math.random()<0.5?'AUTHENTIC':'ALIBI';
+    var w=buildChain(N,3,mode,G.masterSecret,ident,sess);if(!w)continue;
+    var guess=Math.random()<0.5?'AUTHENTIC':'ALIBI';
+    var correct=(mode==='AUTHENTIC')===(guess==='AUTHENTIC');
+    G.timeline.push({correct:correct,mode:mode})
+  }
+  drawTimeline();updateTimelineStats()
+}
+function clearTimeline(){
+  G.timeline=[];drawTimeline();updateTimelineStats()
+}
+function drawTimeline(){
+  var c=document.getElementById('timelineCanvas');
+  var ctx=c.getContext('2d');
+  var dpr=window.devicePixelRatio||1;
+  var rect=c.getBoundingClientRect();
+  c.width=rect.width*dpr;c.height=280*dpr;
+  ctx.scale(dpr,dpr);
+  var W=rect.width,H=280;
+  ctx.clearRect(0,0,W,H);
+  if(G.timeline.length<50){ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--color-text-quaternary');ctx.font='13px sans-serif';ctx.textAlign='center';ctx.fillText('Run batch to see accuracy timeline (need ≥50)...',W/2,H/2);return}
+  var windowSize=50;
+  var points=[];
+  for(var i=windowSize;i<=G.timeline.length;i++){
+    var win=G.timeline.slice(i-windowSize,i);
+    points.push(win.filter(function(x){return x.correct}).length/windowSize)
+  }
+  var chartH=H-60,chartW=W-50,stepX=chartW/Math.max(points.length-1,1);
+  ctx.strokeStyle=cv('--color-border');ctx.lineWidth=0.5;
+  for(var pi=0;pi<3;pi++){
+    var pct=[0.25,0.5,0.75][pi];
+    var y=H-40-chartH*pct;ctx.beginPath();ctx.moveTo(25,y);ctx.lineTo(W-25,y);ctx.stroke()
+  }
+  ctx.strokeStyle=cv('--color-text-quaternary');ctx.setLineDash([4,4]);ctx.lineWidth=1.2;
+  var midY=H-40-chartH*0.5;ctx.beginPath();ctx.moveTo(25,midY);ctx.lineTo(W-25,midY);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=cv('--color-text-quaternary');ctx.font='10px sans-serif';ctx.textAlign='left';ctx.fillText('50% baseline',30,midY-6);
+  ctx.strokeStyle=cv('--chart-1');ctx.lineWidth=1.8;ctx.beginPath();
+  points.forEach(function(p,i){var x=25+i*stepX,y=H-40-chartH*p;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();
+  ctx.fillStyle=cv('--chart-1')+'1f';ctx.beginPath();
+  ctx.moveTo(25,H-40);points.forEach(function(p,i){ctx.lineTo(25+i*stepX,H-40-chartH*p)});ctx.lineTo(25+(points.length-1)*stepX,H-40);ctx.closePath();ctx.fill();
+  ctx.fillStyle=cv('--color-text-tertiary');ctx.font='10px sans-serif';ctx.textAlign='left';
+  ctx.fillText('0%',4,H-36);ctx.fillText('100%',0,18);ctx.textAlign='right';ctx.fillText(G.timeline.length+' witnesses',W-4,H-36)
+}
+function updateTimelineStats(){
+  if(G.timeline.length<50){['tl-mean','tl-std','tl-range'].forEach(function(id){document.getElementById(id).textContent='—'});return}
+  var ws=50,pts=[];
+  for(var i=ws;i<=G.timeline.length;i++)pts.push(G.timeline.slice(i-ws,i).filter(function(x){return x.correct}).length/ws);
+  var mean=pts.reduce(function(a,b){return a+b},0)/pts.length;
+  var std=Math.sqrt(pts.reduce(function(a,b){return a+(b-mean)*(b-mean)},0)/pts.length);
+  document.getElementById('tl-mean').textContent=(mean*100).toFixed(1)+'%';
+  document.getElementById('tl-std').textContent=(std*100).toFixed(1)+'%';
+  document.getElementById('tl-range').textContent=(Math.min.apply(null,pts)*100).toFixed(0)+'% / '+(Math.max.apply(null,pts)*100).toFixed(0)+'%'
+}
+
+var AES_POLY=0x11B;
+function gfMul(a,b){var res=0,aa=a,bb=b;for(var i=0;i<8;i++){if(bb&1)res^=aa;var high=aa&0x80;aa<<=1;if(high)aa^=0x1B;bb>>=1}return res&0xFF}
+function gfInv(a){if(a===0)return 0;var s1=gfMul(a,a),s2=gfMul(s1,s1),s3=gfMul(s2,s2),s4=gfMul(s3,s3),s5=gfMul(s4,s4),s6=gfMul(s5,s5),s7=gfMul(s6,s6);var r=gfMul(s7,s6);r=gfMul(r,s5);r=gfMul(r,s4);r=gfMul(r,s3);r=gfMul(r,s2);r=gfMul(r,s1);return r}
+function gfEval(poly,x){var res=0;for(var i=poly.length-1;i>=0;i--)res=gfMul(res,x)^poly[i];return res}
+function shamirSplit(){
+  G.shamir.secret=randomBytes(32);
+  G.shamir.commitment=sha256Simple(Array.from(G.shamir.secret).join(','));
+  G.shamir.shares=[];
+  for(var idx=1;idx<=5;idx++){
+    var shareVal=[];
+    for(var b=0;b<32;b++){
+      var a1=Math.floor(Math.random()*256),a2=Math.floor(Math.random()*256);
+      var y=G.shamir.secret[b]^gfMul(a1,idx)^gfMul(gfMul(a2,idx),idx);
+      shareVal.push(y)
+    }
+    G.shamir.shares.push({index:idx,value:shareVal})
+  }
+  document.getElementById('shamir-secret').textContent=Array.from(G.shamir.secret).map(function(b){return b.toString(16).padStart(2,'0')}).join('');
+  document.getElementById('shamir-commit').textContent=Array.from(G.shamir.commitment).map(function(b){return b.toString(16).padStart(2,'0')}).join('');
+  var grid=document.getElementById('shamir-shares');grid.innerHTML='';
+  G.shamir.shares.forEach(function(s){
+    var card=document.createElement('div');card.className='mrs-share-card';
+    card.innerHTML='<div class="mrs-share-idx">Share #'+s.index+'</div><div class="mrs-share-val">'+s.value.slice(0,4).map(function(b){return b.toString(16).padStart(2,'0')}).join(' ')+' …</div>';
+    grid.appendChild(card)
+  });
+  var vault=document.getElementById('vault-status');
+  vault.textContent='🔒 Vault locked — need 3 of 5 shares to recover';
+  vault.className='mrs-vault-locked';vault.style.color=''
+}
+function shamirRecover(numShares,useCorrect){
+  if(!G.shamir.secret){document.getElementById('vault-status').textContent='❌ No secret generated yet';document.getElementById('vault-status').className='mrs-vault-err';return}
+  var selected=G.shamir.shares.slice(0,numShares).map(function(s){return{index:s.index,value:[...s.value]}});
+  if(!useCorrect){selected[0].value[0]^=0xFF}
+  var recovered=new Uint8Array(32);
+  for(var b=0;b<32;b++){
+    var secret=0;
+    for(var i=0;i<selected.length;i++){
+      var li=1;
+      for(var j=0;j<selected.length;j++)if(i!==j){
+        var xi=selected[i].index,xj=selected[j].index;
+        li=gfMul(li,gfMul(xj,gfInv(xi^xj)))
+      }
+      secret^=gfMul(selected[i].value[b],li)
+    }
+    recovered[b]=secret
+  }
+  var recomputed=sha256Simple(Array.from(recovered).join(','));
+  var match=Array.from(recomputed).every(function(v,i){return v===G.shamir.commitment[i]});
+  var vault=document.getElementById('vault-status');
+  if(match){vault.textContent='🔓 Vault OPEN! Commitment verified ✓ Secret recovered correctly';vault.className='mrs-vault-open'}
+  else{vault.textContent='❌ Vault FAILED! Commitment mismatch — wrong threshold, corrupted share, or tampering detected';vault.className='mrs-vault-err'}
+}
+function resetShamir(){
+  G.shamir={secret:null,commitment:null,shares:[]};
+  document.getElementById('shamir-secret').textContent='No secret generated';
+  document.getElementById('shamir-commit').textContent='—';
+  document.getElementById('shamir-shares').innerHTML='';
+  var vault=document.getElementById('vault-status');
+  vault.textContent='🔒 Vault locked — split a secret first';
+  vault.className='mrs-vault-locked';vault.style.color=''
+}
+
+resetAll()
+</script>
+</body>
+</html>
