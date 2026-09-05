@@ -31,8 +31,8 @@ use crate::core::diophantine::DiophantinePair;
 use crate::crypto::shamir;
 use crate::sampler::{sample_three_layers_safe_raw, select_chain, MrsChain};
 use aes_gcm::{
-   aead::{Aead, AeadCore, KeyInit, OsRng},
-   Aes256Gcm, Nonce,
+    aead::{Aead, AeadCore, KeyInit, OsRng},
+    Aes256Gcm, Nonce,
 };
 use argon2::{Argon2, Params as Argon2Params};
 use hkdf::Hkdf;
@@ -56,13 +56,13 @@ type HmacSha256 = Hmac<Sha256>;
 /// cryptographic binding tag that links it (optionally) to an identity.
 #[derive(Debug, Clone, PartialEq, Zeroize, ZeroizeOnDrop)]
 pub struct Witness {
-   /// The underlying MRS Diophantine chain (public or private components).
-   pub chain: MrsChain,
-   /// Cryptographic binding tag: HMAC(master_secret, identity || session || chain_hash)
-   /// Empty if this is an unbound alternative witness.
-   pub binding_tag: [u8; 32],
-   /// Session identifier this witness was generated for.
-   pub session_id: Vec<u8>,
+    /// The underlying MRS Diophantine chain (public or private components).
+    pub chain: MrsChain,
+    /// Cryptographic binding tag: HMAC(master_secret, identity || session || chain_hash)
+    /// Empty if this is an unbound alternative witness.
+    pub binding_tag: [u8; 32],
+    /// Session identifier this witness was generated for.
+    pub session_id: Vec<u8>,
 }
 
 /// An Alibi IS a Witness, but the compiler sees it as a unique type.
@@ -74,8 +74,8 @@ pub struct Alibi(pub Witness);
 /// witnesses are deterministically derived.
 #[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
 pub struct MasterSecret {
-   key: ProtectedKey,
-   mode: SecretMode,
+    key: ProtectedKey,
+    mode: SecretMode,
 }
 
 /// Encapsulated 32-byte key. Never public.
@@ -87,82 +87,82 @@ struct ProtectedKey([u8; 32]);
 /// Therefore it can be Copy without compromising security.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Zeroize)]
 pub enum SecretMode {
-   /// Real identity, used for authentication.
-   Authentic,
-   /// Panic mode: revealed under coercion, generates unbound witnesses.
-   Duress,
+    /// Real identity, used for authentication.
+    Authentic,
+    /// Panic mode: revealed under coercion, generates unbound witnesses.
+    Duress,
 }
 
 /// Input for master secret derivation.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SecretInput {
-   /// Password or PIN (knowledge factor).
-   pub password: String,
-   /// Optional: hardware token (possession factor, e.g. YubiKey HMAC).
-   pub hardware_token: Option<[u8; 32]>,
-   /// Optional: biometric hash (inherence factor, computed locally).
-   pub biometric_hash: Option<[u8; 32]>,
-   /// Unique salt per user, stored publicly.
-   pub salt: [u8; 16],
+    /// Password or PIN (knowledge factor).
+    pub password: String,
+    /// Optional: hardware token (possession factor, e.g. YubiKey HMAC).
+    pub hardware_token: Option<[u8; 32]>,
+    /// Optional: biometric hash (inherence factor, computed locally).
+    pub biometric_hash: Option<[u8; 32]>,
+    /// Unique salt per user, stored publicly.
+    pub salt: [u8; 16],
 }
 
 /// Configuration for the KDF.
 pub struct SecretConfig {
-   pub argon2_params: Argon2Params,
-   pub mode: SecretMode,
+    pub argon2_params: Argon2Params,
+    pub mode: SecretMode,
 }
 
 /// A share for Shamir Secret Sharing.
 #[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KeyShare {
-   pub index: u8,
-   pub value: [u8; 32],
+    pub index: u8,
+    pub value: [u8; 32],
 }
 
 /// Sealed master secret for storage on disk.
 #[derive(Debug, Clone)]
 pub struct SealedMasterSecret {
-   pub ciphertext: Vec<u8>,
-   pub nonce: [u8; 12],
-   pub mode: SecretMode,
+    pub ciphertext: Vec<u8>,
+    pub nonce: [u8; 12],
+    pub mode: SecretMode,
 }
 
 /// Public parameters for a witness space W_N.
 /// Anyone can verify membership of a witness in W_N using only these params.
 #[derive(Debug, Clone)]
 pub struct WitnessSpace {
-   /// The public session root N.
-   pub root_n: u64,
-   /// Depth of the MRS chain (fixed at 3 in MRS-AUTH).
-   pub depth: usize,
+    /// The public session root N.
+    pub root_n: u64,
+    /// Depth of the MRS chain (fixed at 3 in MRS-AUTH).
+    pub depth: usize,
 }
 
 /// Result of a witness verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessStatus {
-   /// Witness is mathematically valid in W_N but NOT bound to any identity.
-   ValidButUnbound,
-   /// Witness is mathematically valid AND correctly bound to the claimed identity.
-   Authentic,
-   /// Witness is mathematically INVALID (fails N = 19A + 9B checks).
-   Invalid,
-   /// Witness is mathematically valid but binding tag does NOT match.
-   BindingMismatch,
+    /// Witness is mathematically valid in W_N but NOT bound to any identity.
+    ValidButUnbound,
+    /// Witness is mathematically valid AND correctly bound to the claimed identity.
+    Authentic,
+    /// Witness is mathematically INVALID (fails N = 19A + 9B checks).
+    Invalid,
+    /// Witness is mathematically valid but binding tag does NOT match.
+    BindingMismatch,
 }
 
 /// Errors during derivation or secret sharing.
 #[derive(Debug)]
 pub enum DeriveError {
-   KdfFailed,
-   HkdfFailed,
-   InvalidFactors,
-   InsufficientEntropy,
-   /// Not enough shares provided for recovery.
-   InsufficientShares,
-   /// Duplicate share indices detected.
-   DuplicateShares,
-   /// Recovered secret does not match the commitment (wrong or corrupted shares).
-   CommitmentMismatch,
+    KdfFailed,
+    HkdfFailed,
+    InvalidFactors,
+    InsufficientEntropy,
+    /// Not enough shares provided for recovery.
+    InsufficientShares,
+    /// Duplicate share indices detected.
+    DuplicateShares,
+    /// Recovered secret does not match the commitment (wrong or corrupted shares).
+    CommitmentMismatch,
 }
 
 // =============================================================================
@@ -171,23 +171,23 @@ pub enum DeriveError {
 
 /// Every 'Space' in the application can generate alibis without secrets.
 pub trait ProverSpace {
-   type WitnessType;
-   type AlibiType;
+    type WitnessType;
+    type AlibiType;
 
-   fn generate_alibi(
-       &self,
-       authentic: &Self::WitnessType,
-       rng: &mut impl RngCore,
-   ) -> Option<Self::AlibiType>;
+    fn generate_alibi(
+        &self,
+        authentic: &Self::WitnessType,
+        rng: &mut impl RngCore,
+    ) -> Option<Self::AlibiType>;
 }
 
 impl ProverSpace for WitnessSpace {
-   type WitnessType = Witness;
-   type AlibiType = Alibi;
+    type WitnessType = Witness;
+    type AlibiType = Alibi;
 
-   fn generate_alibi(&self, authentic: &Witness, rng: &mut impl RngCore) -> Option<Alibi> {
-       self.generate_alternative_witness(authentic, rng)
-   }
+    fn generate_alibi(&self, authentic: &Witness, rng: &mut impl RngCore) -> Option<Alibi> {
+        self.generate_alternative_witness(authentic, rng)
+    }
 }
 
 // =============================================================================
@@ -195,201 +195,201 @@ impl ProverSpace for WitnessSpace {
 // =============================================================================
 
 impl MasterSecret {
-   /// Derive a master secret from multiple factors.
-   ///
-   /// Derivation pipeline:
-   /// 1. Password to Argon2id (memory-hard, GPU-resistant)
-   /// 2. Constant-time XOR with hardware token and biometric hash
-   /// 3. HKDF-SHA256 with mode-specific domain separation
-   pub fn derive(input: &SecretInput, config: &SecretConfig) -> Result<Self, DeriveError> {
-       // Step 1: Memory-hard KDF on the password
-       let mut password_key = [0u8; 32];
-       Argon2::new(
-           argon2::Algorithm::Argon2id,
-           argon2::Version::V0x13,
-           config.argon2_params.clone(),
-       )
-       .hash_password_into(input.password.as_bytes(), &input.salt, &mut password_key)
-       .map_err(|_| DeriveError::KdfFailed)?;
+    /// Derive a master secret from multiple factors.
+    ///
+    /// Derivation pipeline:
+    /// 1. Password to Argon2id (memory-hard, GPU-resistant)
+    /// 2. Constant-time XOR with hardware token and biometric hash
+    /// 3. HKDF-SHA256 with mode-specific domain separation
+    pub fn derive(input: &SecretInput, config: &SecretConfig) -> Result<Self, DeriveError> {
+        // Step 1: Memory-hard KDF on the password
+        let mut password_key = [0u8; 32];
+        Argon2::new(
+            argon2::Algorithm::Argon2id,
+            argon2::Version::V0x13,
+            config.argon2_params.clone(),
+        )
+        .hash_password_into(input.password.as_bytes(), &input.salt, &mut password_key)
+        .map_err(|_| DeriveError::KdfFailed)?;
 
-       // Step 2: Constant-time XOR with hardware/biometrics
-       let mut combined = password_key;
-       if let Some(token) = input.hardware_token {
-           for (c, t) in combined.iter_mut().zip(token.iter()) {
-               *c ^= *t;
-           }
-       }
-       if let Some(bio) = input.biometric_hash {
-           for (c, b) in combined.iter_mut().zip(bio.iter()) {
-               *c ^= *b;
-           }
-       }
+        // Step 2: Constant-time XOR with hardware/biometrics
+        let mut combined = password_key;
+        if let Some(token) = input.hardware_token {
+            for (c, t) in combined.iter_mut().zip(token.iter()) {
+                *c ^= *t;
+            }
+        }
+        if let Some(bio) = input.biometric_hash {
+            for (c, b) in combined.iter_mut().zip(bio.iter()) {
+                *c ^= *b;
+            }
+        }
 
-       // Step 3: Mode-dependent domain separation
-       let domain = match config.mode {
-           SecretMode::Authentic => b"MRS-AUTH-MASTER-v1-AUTHENTIC" as &[u8],
-           SecretMode::Duress => b"MRS-AUTH-MASTER-v1-DURESS" as &[u8],
-       };
+        // Step 3: Mode-dependent domain separation
+        let domain = match config.mode {
+            SecretMode::Authentic => b"MRS-AUTH-MASTER-v1-AUTHENTIC" as &[u8],
+            SecretMode::Duress => b"MRS-AUTH-MASTER-v1-DURESS" as &[u8],
+        };
 
-       let hkdf = Hkdf::<Sha256>::new(Some(&input.salt), &combined);
-       let mut final_key = [0u8; 32];
-       hkdf.expand(domain, &mut final_key)
-           .map_err(|_| DeriveError::HkdfFailed)?;
+        let hkdf = Hkdf::<Sha256>::new(Some(&input.salt), &combined);
+        let mut final_key = [0u8; 32];
+        hkdf.expand(domain, &mut final_key)
+            .map_err(|_| DeriveError::HkdfFailed)?;
 
-       password_key.zeroize();
-       combined.zeroize();
+        password_key.zeroize();
+        combined.zeroize();
 
-       Ok(Self {
-           key: ProtectedKey(final_key),
-           mode: config.mode,
-       })
-   }
+        Ok(Self {
+            key: ProtectedKey(final_key),
+            mode: config.mode,
+        })
+    }
 
-   /// Generate the duress input from an authentic input.
-   ///
-   /// Convention: the duress password is the authentic password with a
-   /// configurable panic suffix (e.g. "mypasswordPANIC").
-   /// Hardware/biometric factors remain identical.
-   pub fn derive_duress_input(authentic: &SecretInput, panic_suffix: &str) -> SecretInput {
-       let mut duress_password = authentic.password.clone();
-       duress_password.push_str(panic_suffix);
+    /// Generate the duress input from an authentic input.
+    ///
+    /// Convention: the duress password is the authentic password with a
+    /// configurable panic suffix (e.g. "mypasswordPANIC").
+    /// Hardware/biometric factors remain identical.
+    pub fn derive_duress_input(authentic: &SecretInput, panic_suffix: &str) -> SecretInput {
+        let mut duress_password = authentic.password.clone();
+        duress_password.push_str(panic_suffix);
 
-       SecretInput {
-           password: duress_password,
-           hardware_token: authentic.hardware_token,
-           biometric_hash: authentic.biometric_hash,
-           salt: authentic.salt,
-       }
-   }
+        SecretInput {
+            password: duress_password,
+            hardware_token: authentic.hardware_token,
+            biometric_hash: authentic.biometric_hash,
+            salt: authentic.salt,
+        }
+    }
 
-   // --- Shamir Secret Sharing ---
+    // --- Shamir Secret Sharing ---
 
-   /// Split the master secret into `shares` shares, `threshold` needed.
-   ///
-   /// Delegates to `shamir::split_secret` over GF(2^8). Each byte of the
-   /// 32-byte master key is shared independently using a distinct random
-   /// polynomial of degree `threshold - 1`.
-   ///
-   /// Returns the shares together with a public SHA-256 commitment to the
-   /// original secret. The commitment must be stored or transmitted alongside
-   /// the shares so that recovery can verify that a sufficient, correct set
-   /// of shares was supplied.
-   pub fn split(
-       &self,
-       threshold: usize,
-       shares: usize,
-   ) -> Result<(Vec<KeyShare>, [u8; 32]), DeriveError> {
-       let mut rng = OsRng;
-       let (raw_shares, commitment) =
-           shamir::split_secret(self.key_bytes(), threshold, shares, &mut rng).map_err(
-               |e| match e {
-                   shamir::ShamirError::ThresholdTooSmall
-                   | shamir::ShamirError::NotEnoughShares
-                   | shamir::ShamirError::TooManyShares => DeriveError::InvalidFactors,
-                   _ => DeriveError::InvalidFactors,
-               },
-           )?;
+    /// Split the master secret into `shares` shares, `threshold` needed.
+    ///
+    /// Delegates to `shamir::split_secret` over GF(2^8). Each byte of the
+    /// 32-byte master key is shared independently using a distinct random
+    /// polynomial of degree `threshold - 1`.
+    ///
+    /// Returns the shares together with a public SHA-256 commitment to the
+    /// original secret. The commitment must be stored or transmitted alongside
+    /// the shares so that recovery can verify that a sufficient, correct set
+    /// of shares was supplied.
+    pub fn split(
+        &self,
+        threshold: usize,
+        shares: usize,
+    ) -> Result<(Vec<KeyShare>, [u8; 32]), DeriveError> {
+        let mut rng = OsRng;
+        let (raw_shares, commitment) =
+            shamir::split_secret(self.key_bytes(), threshold, shares, &mut rng).map_err(
+                |e| match e {
+                    shamir::ShamirError::ThresholdTooSmall
+                    | shamir::ShamirError::NotEnoughShares
+                    | shamir::ShamirError::TooManyShares => DeriveError::InvalidFactors,
+                    _ => DeriveError::InvalidFactors,
+                },
+            )?;
 
-       let key_shares = raw_shares
-           .into_iter()
-           .map(|(idx, value)| KeyShare { index: idx, value })
-           .collect();
+        let key_shares = raw_shares
+            .into_iter()
+            .map(|(idx, value)| KeyShare { index: idx, value })
+            .collect();
 
-       Ok((key_shares, commitment))
-   }
+        Ok((key_shares, commitment))
+    }
 
-   /// Recover a master secret from a set of shares.
-   ///
-   /// Uses Lagrange interpolation in GF(2^8). The caller must supply at
-   /// least `threshold` shares with distinct 1-based indices. The mode
-   /// is not encoded in the shares and must be provided by the caller.
-   ///
-   /// The `commitment` must be the SHA-256 value returned by `split` for
-   /// this secret. Recovery will fail with `DeriveError::CommitmentMismatch`
-   /// if too few, the wrong, or corrupted shares are supplied.
-   pub fn recover(
-       shares: &[KeyShare],
-       commitment: &[u8; 32],
-       mode: SecretMode,
-   ) -> Result<Self, DeriveError> {
-       let mut raw_shares: Vec<(u8, [u8; 32])> =
-           shares.iter().map(|s| (s.index, s.value)).collect();
+    /// Recover a master secret from a set of shares.
+    ///
+    /// Uses Lagrange interpolation in GF(2^8). The caller must supply at
+    /// least `threshold` shares with distinct 1-based indices. The mode
+    /// is not encoded in the shares and must be provided by the caller.
+    ///
+    /// The `commitment` must be the SHA-256 value returned by `split` for
+    /// this secret. Recovery will fail with `DeriveError::CommitmentMismatch`
+    /// if too few, the wrong, or corrupted shares are supplied.
+    pub fn recover(
+        shares: &[KeyShare],
+        commitment: &[u8; 32],
+        mode: SecretMode,
+    ) -> Result<Self, DeriveError> {
+        let mut raw_shares: Vec<(u8, [u8; 32])> =
+            shares.iter().map(|s| (s.index, s.value)).collect();
 
-       let result = shamir::recover_secret_checked(&raw_shares, commitment).map_err(|e| match e {
-           shamir::ShamirError::NoSharesProvided => DeriveError::InsufficientShares,
-           shamir::ShamirError::DuplicateShareIndex => DeriveError::DuplicateShares,
-           shamir::ShamirError::InvalidShareIndex => DeriveError::InvalidFactors,
-           shamir::ShamirError::CommitmentMismatch => DeriveError::CommitmentMismatch,
-           _ => DeriveError::InvalidFactors,
-       });
+        let result = shamir::recover_secret_checked(&raw_shares, commitment).map_err(|e| match e {
+            shamir::ShamirError::NoSharesProvided => DeriveError::InsufficientShares,
+            shamir::ShamirError::DuplicateShareIndex => DeriveError::DuplicateShares,
+            shamir::ShamirError::InvalidShareIndex => DeriveError::InvalidFactors,
+            shamir::ShamirError::CommitmentMismatch => DeriveError::CommitmentMismatch,
+            _ => DeriveError::InvalidFactors,
+        });
 
-       // Zeroize the temporary share buffer now that recovery has run.
-       // Must iterate with `iter_mut()` (not `&mut raw_shares` with a
-       // `mut` binding) since `[u8; 32]` is `Copy`, binding by value would
-       // silently zeroize a local copy instead of the data in `raw_shares`.
-       for (_, value) in raw_shares.iter_mut() {
-           value.zeroize();
-       }
+        // Zeroize the temporary share buffer now that recovery has run.
+        // Must iterate with `iter_mut()` (not `&mut raw_shares` with a
+        // `mut` binding) since `[u8; 32]` is `Copy`, binding by value would
+        // silently zeroize a local copy instead of the data in `raw_shares`.
+        for (_, value) in raw_shares.iter_mut() {
+            value.zeroize();
+        }
 
-       let secret = result?;
-       Ok(Self {
-           key: ProtectedKey(secret),
-           mode,
-       })
-   }
+        let secret = result?;
+        Ok(Self {
+            key: ProtectedKey(secret),
+            mode,
+        })
+    }
 
-   // --- At-Rest Protection ---
+    // --- At-Rest Protection ---
 
-   /// Seal the master secret with a device key (e.g. TPM-derived).
-   pub fn seal(&self, device_key: &[u8; 32]) -> SealedMasterSecret {
-       let cipher = Aes256Gcm::new_from_slice(device_key).expect("valid key length");
-       let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-       let ciphertext = cipher
-           .encrypt(&nonce, self.key.0.as_slice())
-           .expect("AES-GCM encryption never fails with correct input");
+    /// Seal the master secret with a device key (e.g. TPM-derived).
+    pub fn seal(&self, device_key: &[u8; 32]) -> SealedMasterSecret {
+        let cipher = Aes256Gcm::new_from_slice(device_key).expect("valid key length");
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let ciphertext = cipher
+            .encrypt(&nonce, self.key.0.as_slice())
+            .expect("AES-GCM encryption never fails with correct input");
 
-       let mut nonce_bytes = [0u8; 12];
-       nonce_bytes.copy_from_slice(nonce.as_ref());
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes.copy_from_slice(nonce.as_ref());
 
-       SealedMasterSecret {
-           ciphertext,
-           nonce: nonce_bytes,
-           mode: self.mode,
-       }
-   }
+        SealedMasterSecret {
+            ciphertext,
+            nonce: nonce_bytes,
+            mode: self.mode,
+        }
+    }
 
-   /// Unseal a master secret. Only possible with the correct device_key.
-   pub fn unseal(sealed: &SealedMasterSecret, device_key: &[u8; 32]) -> Result<Self, DeriveError> {
-       let cipher = Aes256Gcm::new_from_slice(device_key).expect("valid key length");
-       let nonce = Nonce::from_slice(&sealed.nonce);
-       let plaintext = cipher
-           .decrypt(nonce, sealed.ciphertext.as_ref())
-           .map_err(|_| DeriveError::InvalidFactors)?;
+    /// Unseal a master secret. Only possible with the correct device_key.
+    pub fn unseal(sealed: &SealedMasterSecret, device_key: &[u8; 32]) -> Result<Self, DeriveError> {
+        let cipher = Aes256Gcm::new_from_slice(device_key).expect("valid key length");
+        let nonce = Nonce::from_slice(&sealed.nonce);
+        let plaintext = cipher
+            .decrypt(nonce, sealed.ciphertext.as_ref())
+            .map_err(|_| DeriveError::InvalidFactors)?;
 
-       if plaintext.len() != 32 {
-           return Err(DeriveError::InvalidFactors);
-       }
+        if plaintext.len() != 32 {
+            return Err(DeriveError::InvalidFactors);
+        }
 
-       let mut key = [0u8; 32];
-       key.copy_from_slice(&plaintext);
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&plaintext);
 
-       Ok(Self {
-           key: ProtectedKey(key),
-           mode: sealed.mode,
-       })
-   }
+        Ok(Self {
+            key: ProtectedKey(key),
+            mode: sealed.mode,
+        })
+    }
 
-   // --- Internal API ---
+    // --- Internal API ---
 
-   /// Internal access to the raw key, only for HMAC computations within
-   /// this module. Not public.
-   fn key_bytes(&self) -> &[u8; 32] {
-       &self.key.0
-   }
+    /// Internal access to the raw key, only for HMAC computations within
+    /// this module. Not public.
+    fn key_bytes(&self) -> &[u8; 32] {
+        &self.key.0
+    }
 
-   pub fn mode(&self) -> SecretMode {
-       self.mode
-   }
+    pub fn mode(&self) -> SecretMode {
+        self.mode
+    }
 }
 
 // =============================================================================
@@ -397,121 +397,121 @@ impl MasterSecret {
 // =============================================================================
 
 impl MasterSecret {
-   /// The fixed number of independently-seeded attempts made when
-   /// deriving an authentic witness. See the module-level constant-time
-   /// note above for why this loop never exits early.
-   const MAX_WITNESS_ATTEMPTS: u32 = 512;
+    /// The fixed number of independently-seeded attempts made when
+    /// deriving an authentic witness. See the module-level constant-time
+    /// note above for why this loop never exits early.
+    const MAX_WITNESS_ATTEMPTS: u32 = 512;
 
-   /// Deterministically derive the "intended" witness for a given identity
-   /// and session. This witness is the ONE that authenticates the identity.
-   ///
-   /// Always performs exactly `MAX_WITNESS_ATTEMPTS` independently-seeded
-   /// draws and always does the same amount of work regardless of which
-   /// attempt (if any) succeeds. There is no early return: every attempt
-   /// computes its chain, its hash, and its binding tag, and the winning
-   /// candidate is folded into the result with `select_chain` and
-   /// `select_bytes32` rather than a branch. The number of attempts
-   /// actually needed is a function of `master_secret` (see `derive_seed`
-   /// below), so an early-exit version would leak that count through
-   /// timing.
-   pub fn generate_authentic_witness(
-       &self,
-       space: &WitnessSpace,
-       identity: &[u8],
-       session_id: &[u8],
-   ) -> Option<Witness> {
-       let mut best_chain = MrsChain {
-           layers: vec![
-               DiophantinePair { a: 0, b: 0 },
-               DiophantinePair { a: 0, b: 0 },
-               DiophantinePair { a: 0, b: 0 },
-           ],
-           valid: false,
-       };
-       let mut best_tag = [0u8; 32];
-       let mut found = Choice::from(0);
+    /// Deterministically derive the "intended" witness for a given identity
+    /// and session. This witness is the ONE that authenticates the identity.
+    ///
+    /// Always performs exactly `MAX_WITNESS_ATTEMPTS` independently-seeded
+    /// draws and always does the same amount of work regardless of which
+    /// attempt (if any) succeeds. There is no early return: every attempt
+    /// computes its chain, its hash, and its binding tag, and the winning
+    /// candidate is folded into the result with `select_chain` and
+    /// `select_bytes32` rather than a branch. The number of attempts
+    /// actually needed is a function of `master_secret` (see `derive_seed`
+    /// below), so an early-exit version would leak that count through
+    /// timing.
+    pub fn generate_authentic_witness(
+        &self,
+        space: &WitnessSpace,
+        identity: &[u8],
+        session_id: &[u8],
+    ) -> Option<Witness> {
+        let mut best_chain = MrsChain {
+            layers: vec![
+                DiophantinePair { a: 0, b: 0 },
+                DiophantinePair { a: 0, b: 0 },
+                DiophantinePair { a: 0, b: 0 },
+            ],
+            valid: false,
+        };
+        let mut best_tag = [0u8; 32];
+        let mut found = Choice::from(0);
 
-       for attempt in 0u32..Self::MAX_WITNESS_ATTEMPTS {
-           let seed = Self::derive_seed(self.key_bytes(), identity, session_id, attempt);
-           let mut rng = DeterministicRng::from_seed(seed);
+        for attempt in 0u32..Self::MAX_WITNESS_ATTEMPTS {
+            let seed = Self::derive_seed(self.key_bytes(), identity, session_id, attempt);
+            let mut rng = DeterministicRng::from_seed(seed);
 
-           let (chain, chain_valid) = sample_three_layers_safe_raw(space.root_n, &mut rng);
-           let chain_hash = hash_chain(&chain);
-           let candidate_tag =
-               Self::compute_binding_tag(self.key_bytes(), identity, session_id, &chain_hash);
-           let member_ok = Choice::from(
-               (space.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound) as u8,
-           );
-           let candidate_ok = chain_valid & member_ok;
+            let (chain, chain_valid) = sample_three_layers_safe_raw(space.root_n, &mut rng);
+            let chain_hash = hash_chain(&chain);
+            let candidate_tag =
+                Self::compute_binding_tag(self.key_bytes(), identity, session_id, &chain_hash);
+            let member_ok = Choice::from(
+                (space.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound) as u8,
+            );
+            let candidate_ok = chain_valid & member_ok;
 
-           let take_this = candidate_ok & !found;
-           best_chain = select_chain(&best_chain, &chain, take_this);
-           best_tag = select_bytes32(&best_tag, &candidate_tag, take_this);
-           found |= candidate_ok;
-       }
+            let take_this = candidate_ok & !found;
+            best_chain = select_chain(&best_chain, &chain, take_this);
+            best_tag = select_bytes32(&best_tag, &candidate_tag, take_this);
+            found |= candidate_ok;
+        }
 
-       if found.unwrap_u8() == 1 {
-           Some(Witness {
-               chain: best_chain,
-               binding_tag: best_tag,
-               session_id: session_id.to_vec(),
-           })
-       } else {
-           #[cfg(test)]
-           eprintln!(
-               "[WARN] Failed to generate authentic witness for root_n={} after {} attempts",
-               space.root_n,
-               Self::MAX_WITNESS_ATTEMPTS
-           );
-           None
-       }
-   }
+        if found.unwrap_u8() == 1 {
+            Some(Witness {
+                chain: best_chain,
+                binding_tag: best_tag,
+                session_id: session_id.to_vec(),
+            })
+        } else {
+            #[cfg(test)]
+            eprintln!(
+                "[WARN] Failed to generate authentic witness for root_n={} after {} attempts",
+                space.root_n,
+                Self::MAX_WITNESS_ATTEMPTS
+            );
+            None
+        }
+    }
 
-   /// Compute binding tag:
-   /// HMAC(master_secret, "MRS-AUTH-BIND" || len(identity) || identity ||
-   ///                     len(session_id) || session_id || chain_hash)
-   fn compute_binding_tag(
-       master_key: &[u8; 32],
-       identity: &[u8],
-       session_id: &[u8],
-       chain_hash: &[u8; 32],
-   ) -> [u8; 32] {
-       let mut mac =
-           <HmacSha256 as Mac>::new_from_slice(master_key).expect("HMAC key length is valid");
-       mac.update(b"MRS-AUTH-BIND-v1");
-       mac.update(&(identity.len() as u32).to_be_bytes());
-       mac.update(identity);
-       mac.update(&(session_id.len() as u32).to_be_bytes());
-       mac.update(session_id);
-       mac.update(chain_hash);
+    /// Compute binding tag:
+    /// HMAC(master_secret, "MRS-AUTH-BIND" || len(identity) || identity ||
+    ///                     len(session_id) || session_id || chain_hash)
+    fn compute_binding_tag(
+        master_key: &[u8; 32],
+        identity: &[u8],
+        session_id: &[u8],
+        chain_hash: &[u8; 32],
+    ) -> [u8; 32] {
+        let mut mac =
+            <HmacSha256 as Mac>::new_from_slice(master_key).expect("HMAC key length is valid");
+        mac.update(b"MRS-AUTH-BIND-v1");
+        mac.update(&(identity.len() as u32).to_be_bytes());
+        mac.update(identity);
+        mac.update(&(session_id.len() as u32).to_be_bytes());
+        mac.update(session_id);
+        mac.update(chain_hash);
 
-       let result = mac.finalize().into_bytes();
-       let mut tag = [0u8; 32];
-       tag.copy_from_slice(&result);
-       tag
-   }
+        let result = mac.finalize().into_bytes();
+        let mut tag = [0u8; 32];
+        tag.copy_from_slice(&result);
+        tag
+    }
 
-   /// Derive a deterministic 32-byte seed from master_secret + context + attempt.
-   fn derive_seed(
-       master_key: &[u8; 32],
-       identity: &[u8],
-       session_id: &[u8],
-       attempt: u32,
-   ) -> [u8; 32] {
-       let mut mac =
-           <HmacSha256 as Mac>::new_from_slice(master_key).expect("HMAC key length is valid");
-       mac.update(b"MRS-AUTH-SEED-v1");
-       mac.update(&(identity.len() as u32).to_be_bytes());
-       mac.update(identity);
-       mac.update(&(session_id.len() as u32).to_be_bytes());
-       mac.update(session_id);
-       mac.update(&attempt.to_be_bytes());
+    /// Derive a deterministic 32-byte seed from master_secret + context + attempt.
+    fn derive_seed(
+        master_key: &[u8; 32],
+        identity: &[u8],
+        session_id: &[u8],
+        attempt: u32,
+    ) -> [u8; 32] {
+        let mut mac =
+            <HmacSha256 as Mac>::new_from_slice(master_key).expect("HMAC key length is valid");
+        mac.update(b"MRS-AUTH-SEED-v1");
+        mac.update(&(identity.len() as u32).to_be_bytes());
+        mac.update(identity);
+        mac.update(&(session_id.len() as u32).to_be_bytes());
+        mac.update(session_id);
+        mac.update(&attempt.to_be_bytes());
 
-       let result = mac.finalize().into_bytes();
-       let mut seed = [0u8; 32];
-       seed.copy_from_slice(&result);
-       seed
-   }
+        let result = mac.finalize().into_bytes();
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(&result);
+        seed
+    }
 }
 
 // =============================================================================
@@ -519,18 +519,18 @@ impl MasterSecret {
 // =============================================================================
 
 impl MasterSecret {
-   /// Verify the cryptographic binding of a witness to an identity.
-   pub fn verify_authenticity(&self, witness: &Witness, identity: &[u8]) -> WitnessStatus {
-       let chain_hash = hash_chain(&witness.chain);
-       let expected_tag =
-           Self::compute_binding_tag(self.key_bytes(), identity, &witness.session_id, &chain_hash);
-       let tags_match = expected_tag.ct_eq(&witness.binding_tag);
-       if tags_match.unwrap_u8() == 1 {
-           WitnessStatus::Authentic
-       } else {
-           WitnessStatus::BindingMismatch
-       }
-   }
+    /// Verify the cryptographic binding of a witness to an identity.
+    pub fn verify_authenticity(&self, witness: &Witness, identity: &[u8]) -> WitnessStatus {
+        let chain_hash = hash_chain(&witness.chain);
+        let expected_tag =
+            Self::compute_binding_tag(self.key_bytes(), identity, &witness.session_id, &chain_hash);
+        let tags_match = expected_tag.ct_eq(&witness.binding_tag);
+        if tags_match.unwrap_u8() == 1 {
+            WitnessStatus::Authentic
+        } else {
+            WitnessStatus::BindingMismatch
+        }
+    }
 }
 
 // =============================================================================
@@ -538,118 +538,118 @@ impl MasterSecret {
 // =============================================================================
 
 impl WitnessSpace {
-   /// The fixed number of attempts made when generating an alternative
-   /// witness. Unlike `generate_authentic_witness`, no secret material is
-   /// involved anywhere in this path (see `generate_alternative_witness`
-   /// below), so this loop does not carry the same timing-leak risk. It
-   /// still runs at a fixed cost and without an early return, to match
-   /// the rest of this module and to avoid the same silent-fallback
-   /// failure mode on the rare chance that no candidate validates.
-   const MAX_ALIBI_ATTEMPTS: usize = 512;
+    /// The fixed number of attempts made when generating an alternative
+    /// witness. Unlike `generate_authentic_witness`, no secret material is
+    /// involved anywhere in this path (see `generate_alternative_witness`
+    /// below), so this loop does not carry the same timing-leak risk. It
+    /// still runs at a fixed cost and without an early return, to match
+    /// the rest of this module and to avoid the same silent-fallback
+    /// failure mode on the rare chance that no candidate validates.
+    const MAX_ALIBI_ATTEMPTS: usize = 512;
 
-   pub fn new(root_n: u64, depth: usize) -> Self {
-       Self { root_n, depth }
-   }
+    pub fn new(root_n: u64, depth: usize) -> Self {
+        Self { root_n, depth }
+    }
 
-   /// Internal raw membership verification (returns status).
-   ///
-   /// Always walks every layer of `chain.layers` and only decides which
-   /// `WitnessStatus` to return once the walk is complete, rather than
-   /// returning as soon as one layer fails. A chain produced by this
-   /// crate's own sampler never hits an early-exit condition here in the
-   /// first place (the sampler enforces the same equation while building
-   /// the chain), so the only effect of removing the early exits is
-   /// making this function's timing independent of malformed input too,
-   /// rather than depending on how deep the malformed part of that input
-   /// happens to sit.
-   fn verify_membership_raw(&self, chain: &MrsChain) -> WitnessStatus {
-       let length_ok = Choice::from((chain.layers.len() == self.depth) as u8);
-       let mut current_n = self.root_n;
-       let mut valid = length_ok;
+    /// Internal raw membership verification (returns status).
+    ///
+    /// Always walks every layer of `chain.layers` and only decides which
+    /// `WitnessStatus` to return once the walk is complete, rather than
+    /// returning as soon as one layer fails. A chain produced by this
+    /// crate's own sampler never hits an early-exit condition here in the
+    /// first place (the sampler enforces the same equation while building
+    /// the chain), so the only effect of removing the early exits is
+    /// making this function's timing independent of malformed input too,
+    /// rather than depending on how deep the malformed part of that input
+    /// happens to sit.
+    fn verify_membership_raw(&self, chain: &MrsChain) -> WitnessStatus {
+        let length_ok = Choice::from((chain.layers.len() == self.depth) as u8);
+        let mut current_n = self.root_n;
+        let mut valid = length_ok;
 
-       for pair in &chain.layers {
-           let lhs = 19u64
-               .wrapping_mul(pair.a)
-               .wrapping_add(9u64.wrapping_mul(pair.b));
-           let equation_ok = Choice::from((lhs == current_n) as u8);
-           let degenerate = pair.a == 0 && pair.b == 0 && current_n > 0;
-           let not_degenerate = Choice::from((!degenerate) as u8);
-           valid &= equation_ok & not_degenerate;
-           current_n = pair.a;
-       }
+        for pair in &chain.layers {
+            let lhs = 19u64
+                .wrapping_mul(pair.a)
+                .wrapping_add(9u64.wrapping_mul(pair.b));
+            let equation_ok = Choice::from((lhs == current_n) as u8);
+            let degenerate = pair.a == 0 && pair.b == 0 && current_n > 0;
+            let not_degenerate = Choice::from((!degenerate) as u8);
+            valid &= equation_ok & not_degenerate;
+            current_n = pair.a;
+        }
 
-       if valid.unwrap_u8() == 1 {
-           WitnessStatus::ValidButUnbound
-       } else {
-           WitnessStatus::Invalid
-       }
-   }
+        if valid.unwrap_u8() == 1 {
+            WitnessStatus::ValidButUnbound
+        } else {
+            WitnessStatus::Invalid
+        }
+    }
 
-   /// Verify whether a witness is a mathematically valid member of W_N.
-   /// This is a PUBLIC operation, anyone can run it.
-   pub fn verify_membership(&self, witness: &Witness) -> WitnessStatus {
-       self.verify_membership_raw(&witness.chain)
-   }
+    /// Verify whether a witness is a mathematically valid member of W_N.
+    /// This is a PUBLIC operation, anyone can run it.
+    pub fn verify_membership(&self, witness: &Witness) -> WitnessStatus {
+        self.verify_membership_raw(&witness.chain)
+    }
 
-   /// Generate an alternative witness w' ∈ W_N that is mathematically valid
-   /// but NOT bound to the identity. PUBLIC operation, no MasterSecret needed.
-   ///
-   /// Always performs exactly `MAX_ALIBI_ATTEMPTS` draws from `rng` and
-   /// always does the same amount of work regardless of which attempt (if
-   /// any) succeeds, matching `generate_authentic_witness`'s discipline
-   /// even though no secret is involved on this path.
-   pub fn generate_alternative_witness(
-       &self,
-       authentic: &Witness,
-       rng: &mut impl RngCore,
-   ) -> Option<Alibi> {
-       let mut best_chain = MrsChain {
-           layers: vec![
-               DiophantinePair { a: 0, b: 0 },
-               DiophantinePair { a: 0, b: 0 },
-               DiophantinePair { a: 0, b: 0 },
-           ],
-           valid: false,
-       };
-       let mut best_tag = [0u8; 32];
-       let mut found = Choice::from(0);
+    /// Generate an alternative witness w' ∈ W_N that is mathematically valid
+    /// but NOT bound to the identity. PUBLIC operation, no MasterSecret needed.
+    ///
+    /// Always performs exactly `MAX_ALIBI_ATTEMPTS` draws from `rng` and
+    /// always does the same amount of work regardless of which attempt (if
+    /// any) succeeds, matching `generate_authentic_witness`'s discipline
+    /// even though no secret is involved on this path.
+    pub fn generate_alternative_witness(
+        &self,
+        authentic: &Witness,
+        rng: &mut impl RngCore,
+    ) -> Option<Alibi> {
+        let mut best_chain = MrsChain {
+            layers: vec![
+                DiophantinePair { a: 0, b: 0 },
+                DiophantinePair { a: 0, b: 0 },
+                DiophantinePair { a: 0, b: 0 },
+            ],
+            valid: false,
+        };
+        let mut best_tag = [0u8; 32];
+        let mut found = Choice::from(0);
 
-       for _ in 0..Self::MAX_ALIBI_ATTEMPTS {
-           let (chain, chain_valid) = sample_three_layers_safe_raw(self.root_n, rng);
-           let differs = !chains_equal_ct(&chain, &authentic.chain);
-           let member_ok = Choice::from(
-               (self.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound) as u8,
-           );
-           let candidate_ok = chain_valid & differs & member_ok;
+        for _ in 0..Self::MAX_ALIBI_ATTEMPTS {
+            let (chain, chain_valid) = sample_three_layers_safe_raw(self.root_n, rng);
+            let differs = !chains_equal_ct(&chain, &authentic.chain);
+            let member_ok = Choice::from(
+                (self.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound) as u8,
+            );
+            let candidate_ok = chain_valid & differs & member_ok;
 
-           // Drawn for every attempt, not just the winning one: this is
-           // already public, non-secret randomness, so generating it
-           // unconditionally costs nothing in terms of what it reveals,
-           // and keeps this loop free of any branch on candidate_ok.
-           let mut candidate_tag = [0u8; 32];
-           rng.fill_bytes(&mut candidate_tag);
+            // Drawn for every attempt, not just the winning one: this is
+            // already public, non-secret randomness, so generating it
+            // unconditionally costs nothing in terms of what it reveals,
+            // and keeps this loop free of any branch on candidate_ok.
+            let mut candidate_tag = [0u8; 32];
+            rng.fill_bytes(&mut candidate_tag);
 
-           let take_this = candidate_ok & !found;
-           best_chain = select_chain(&best_chain, &chain, take_this);
-           best_tag = select_bytes32(&best_tag, &candidate_tag, take_this);
-           found |= candidate_ok;
-       }
+            let take_this = candidate_ok & !found;
+            best_chain = select_chain(&best_chain, &chain, take_this);
+            best_tag = select_bytes32(&best_tag, &candidate_tag, take_this);
+            found |= candidate_ok;
+        }
 
-       if found.unwrap_u8() == 1 {
-           Some(Alibi(Witness {
-               chain: best_chain,
-               binding_tag: best_tag,
-               session_id: authentic.session_id.clone(),
-           }))
-       } else {
-           #[cfg(test)]
-           eprintln!(
-               "[WARN] Failed to generate alternative witness after {} attempts",
-               Self::MAX_ALIBI_ATTEMPTS
-           );
-           None
-       }
-   }
+        if found.unwrap_u8() == 1 {
+            Some(Alibi(Witness {
+                chain: best_chain,
+                binding_tag: best_tag,
+                session_id: authentic.session_id.clone(),
+            }))
+        } else {
+            #[cfg(test)]
+            eprintln!(
+                "[WARN] Failed to generate alternative witness after {} attempts",
+                Self::MAX_ALIBI_ATTEMPTS
+            );
+            None
+        }
+    }
 }
 
 // =============================================================================
@@ -658,27 +658,27 @@ impl WitnessSpace {
 
 /// SHA-256 hash of an MRS chain.
 pub fn hash_chain(chain: &MrsChain) -> [u8; 32] {
-   let mut hasher = Sha256::new();
-   for pair in &chain.layers {
-       hasher.update(pair.a.to_be_bytes());
-       hasher.update(pair.b.to_be_bytes());
-   }
-   let mut out = [0u8; 32];
-   out.copy_from_slice(&hasher.finalize());
-   out
+    let mut hasher = Sha256::new();
+    for pair in &chain.layers {
+        hasher.update(pair.a.to_be_bytes());
+        hasher.update(pair.b.to_be_bytes());
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&hasher.finalize());
+    out
 }
 
 /// Constant-time equality check for two MrsChain structures.
 fn chains_equal_ct(a: &MrsChain, b: &MrsChain) -> Choice {
-   if a.layers.len() != b.layers.len() {
-       return Choice::from(0);
-   }
-   let mut eq = Choice::from(1);
-   for (pa, pb) in a.layers.iter().zip(b.layers.iter()) {
-       eq &= pa.a.ct_eq(&pb.a);
-       eq &= pa.b.ct_eq(&pb.b);
-   }
-   eq
+    if a.layers.len() != b.layers.len() {
+        return Choice::from(0);
+    }
+    let mut eq = Choice::from(1);
+    for (pa, pb) in a.layers.iter().zip(b.layers.iter()) {
+        eq &= pa.a.ct_eq(&pb.a);
+        eq &= pa.b.ct_eq(&pb.b);
+    }
+    eq
 }
 
 /// Selects between two 32-byte tags without branching on `choice`, the
@@ -687,12 +687,12 @@ fn chains_equal_ct(a: &MrsChain, b: &MrsChain) -> Choice {
 /// array impl, matching this crate's existing style for types `subtle`
 /// does not cover directly (see `ct_select_u128` in the sampler module).
 fn select_bytes32(current_best: &[u8; 32], candidate: &[u8; 32], choice: Choice) -> [u8; 32] {
-   let mask = choice.unwrap_u8().wrapping_neg(); // 0x00 or 0xFF
-   let mut out = [0u8; 32];
-   for i in 0..32 {
-       out[i] = (candidate[i] & mask) | (current_best[i] & !mask);
-   }
-   out
+    let mask = choice.unwrap_u8().wrapping_neg(); // 0x00 or 0xFF
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = (candidate[i] & mask) | (current_best[i] & !mask);
+    }
+    out
 }
 
 // =============================================================================
@@ -700,74 +700,74 @@ fn select_bytes32(current_best: &[u8; 32], candidate: &[u8; 32], choice: Choice)
 // =============================================================================
 
 struct DeterministicRng {
-   state: [u8; 32],
-   counter: u64,
-   buffer: [u8; 64],
-   buffer_pos: usize,
+    state: [u8; 32],
+    counter: u64,
+    buffer: [u8; 64],
+    buffer_pos: usize,
 }
 
 impl DeterministicRng {
-   fn from_seed(seed: [u8; 32]) -> Self {
-       let mut rng = Self {
-           state: seed,
-           counter: 0,
-           buffer: [0u8; 64],
-           buffer_pos: 64,
-       };
-       rng.refill();
-       rng
-   }
+    fn from_seed(seed: [u8; 32]) -> Self {
+        let mut rng = Self {
+            state: seed,
+            counter: 0,
+            buffer: [0u8; 64],
+            buffer_pos: 64,
+        };
+        rng.refill();
+        rng
+    }
 
-   fn refill(&mut self) {
-       for i in 0..2 {
-           let mut hasher = Sha256::new();
-           hasher.update(self.state);
-           hasher.update(self.counter.to_be_bytes());
-           hasher.update([i as u8]);
-           let hash = hasher.finalize();
-           self.buffer[i * 32..(i + 1) * 32].copy_from_slice(&hash);
-       }
-       self.counter = self.counter.wrapping_add(1);
-       self.buffer_pos = 0;
-   }
+    fn refill(&mut self) {
+        for i in 0..2 {
+            let mut hasher = Sha256::new();
+            hasher.update(self.state);
+            hasher.update(self.counter.to_be_bytes());
+            hasher.update([i as u8]);
+            let hash = hasher.finalize();
+            self.buffer[i * 32..(i + 1) * 32].copy_from_slice(&hash);
+        }
+        self.counter = self.counter.wrapping_add(1);
+        self.buffer_pos = 0;
+    }
 }
 
 impl RngCore for DeterministicRng {
-   fn next_u32(&mut self) -> u32 {
-       if self.buffer_pos + 4 > 64 {
-           self.refill();
-       }
-       let mut bytes = [0u8; 4];
-       bytes.copy_from_slice(&self.buffer[self.buffer_pos..self.buffer_pos + 4]);
-       self.buffer_pos += 4;
-       u32::from_be_bytes(bytes)
-   }
+    fn next_u32(&mut self) -> u32 {
+        if self.buffer_pos + 4 > 64 {
+            self.refill();
+        }
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(&self.buffer[self.buffer_pos..self.buffer_pos + 4]);
+        self.buffer_pos += 4;
+        u32::from_be_bytes(bytes)
+    }
 
-   fn next_u64(&mut self) -> u64 {
-       if self.buffer_pos + 8 > 64 {
-           self.refill();
-       }
-       let mut bytes = [0u8; 8];
-       bytes.copy_from_slice(&self.buffer[self.buffer_pos..self.buffer_pos + 8]);
-       self.buffer_pos += 8;
-       u64::from_be_bytes(bytes)
-   }
+    fn next_u64(&mut self) -> u64 {
+        if self.buffer_pos + 8 > 64 {
+            self.refill();
+        }
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&self.buffer[self.buffer_pos..self.buffer_pos + 8]);
+        self.buffer_pos += 8;
+        u64::from_be_bytes(bytes)
+    }
 
-   fn fill_bytes(&mut self, dest: &mut [u8]) {
-       for chunk in dest.chunks_mut(64) {
-           if self.buffer_pos + chunk.len() > 64 {
-               self.refill();
-           }
-           let end = self.buffer_pos + chunk.len();
-           chunk.copy_from_slice(&self.buffer[self.buffer_pos..end]);
-           self.buffer_pos = end;
-       }
-   }
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        for chunk in dest.chunks_mut(64) {
+            if self.buffer_pos + chunk.len() > 64 {
+                self.refill();
+            }
+            let end = self.buffer_pos + chunk.len();
+            chunk.copy_from_slice(&self.buffer[self.buffer_pos..end]);
+            self.buffer_pos = end;
+        }
+    }
 
-   fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
-       self.fill_bytes(dest);
-       Ok(())
-   }
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
 }
 
 // =============================================================================
@@ -776,55 +776,55 @@ impl RngCore for DeterministicRng {
 
 #[cfg(test)]
 fn find_working_root_n() -> u64 {
-   for n in (3_000_001..10_000_000).step_by(100_000) {
-       let params = crate::sampler::LayerParams::new_ct(n);
-       if params.valid.unwrap_u8() == 1 {
-           return n;
-       }
-   }
-   3_500_007
+    for n in (3_000_001..10_000_000).step_by(100_000) {
+        let params = crate::sampler::LayerParams::new_ct(n);
+        if params.valid.unwrap_u8() == 1 {
+            return n;
+        }
+    }
+    3_500_007
 }
 
 #[cfg(test)]
 fn generate_test_witness() -> (MasterSecret, WitnessSpace, Witness) {
-   let salt = [0u8; 16];
-   let input = SecretInput {
-       password: "correct horse battery staple".to_string(),
-       hardware_token: None,
-       biometric_hash: None,
-       salt,
-   };
-   let config = SecretConfig {
-       argon2_params: Argon2Params::default(),
-       mode: SecretMode::Authentic,
-   };
-   let master = MasterSecret::derive(&input, &config).expect("derive authentic");
-   let root_n = find_working_root_n();
-   let space = WitnessSpace::new(root_n, 3);
-   let id = b"alice@example.com";
-   let session = b"test-session";
-   let witness = master
-       .generate_authentic_witness(&space, id, session)
-       .expect("Failed to generate test witness");
-   (master, space, witness)
+    let salt = [0u8; 16];
+    let input = SecretInput {
+        password: "correct horse battery staple".to_string(),
+        hardware_token: None,
+        biometric_hash: None,
+        salt,
+    };
+    let config = SecretConfig {
+        argon2_params: Argon2Params::default(),
+        mode: SecretMode::Authentic,
+    };
+    let master = MasterSecret::derive(&input, &config).expect("derive authentic");
+    let root_n = find_working_root_n();
+    let space = WitnessSpace::new(root_n, 3);
+    let id = b"alice@example.com";
+    let session = b"test-session";
+    let witness = master
+        .generate_authentic_witness(&space, id, session)
+        .expect("Failed to generate test witness");
+    (master, space, witness)
 }
 
 #[allow(dead_code)]
 #[cfg(test)]
 fn generate_duress_master() -> MasterSecret {
-   let salt = [0u8; 16];
-   let input = SecretInput {
-       password: "correct horse battery staple".to_string(),
-       hardware_token: None,
-       biometric_hash: None,
-       salt,
-   };
-   let duress_input = MasterSecret::derive_duress_input(&input, "PANIC");
-   let config = SecretConfig {
-       argon2_params: Argon2Params::default(),
-       mode: SecretMode::Duress,
-   };
-   MasterSecret::derive(&duress_input, &config).expect("derive duress")
+    let salt = [0u8; 16];
+    let input = SecretInput {
+        password: "correct horse battery staple".to_string(),
+        hardware_token: None,
+        biometric_hash: None,
+        salt,
+    };
+    let duress_input = MasterSecret::derive_duress_input(&input, "PANIC");
+    let config = SecretConfig {
+        argon2_params: Argon2Params::default(),
+        mode: SecretMode::Duress,
+    };
+    MasterSecret::derive(&duress_input, &config).expect("derive duress")
 }
 
 // =============================================================================
@@ -833,648 +833,648 @@ fn generate_duress_master() -> MasterSecret {
 
 #[cfg(test)]
 mod tests {
-   use super::*;
-   use rand::rngs::OsRng;
+    use super::*;
+    use rand::rngs::OsRng;
 
-   #[test]
-   fn test_authentic_witness_reproducible() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "correct horse battery staple".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
-       let root_n = find_working_root_n();
-       let space = WitnessSpace::new(root_n, 3);
-       let id = b"alice@example.com";
-       let session = b"session-2026-08-28";
+    #[test]
+    fn test_authentic_witness_reproducible() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "correct horse battery staple".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let root_n = find_working_root_n();
+        let space = WitnessSpace::new(root_n, 3);
+        let id = b"alice@example.com";
+        let session = b"session-2026-08-28";
 
-       let w1 = master
-           .generate_authentic_witness(&space, id, session)
-           .expect("Failed to generate witness #1");
-       let w2 = master
-           .generate_authentic_witness(&space, id, session)
-           .expect("Failed to generate witness #2");
+        let w1 = master
+            .generate_authentic_witness(&space, id, session)
+            .expect("Failed to generate witness #1");
+        let w2 = master
+            .generate_authentic_witness(&space, id, session)
+            .expect("Failed to generate witness #2");
 
-       assert!(chains_equal_ct(&w1.chain, &w2.chain).unwrap_u8() == 1);
-       assert_eq!(w1.binding_tag, w2.binding_tag);
-   }
+        assert!(chains_equal_ct(&w1.chain, &w2.chain).unwrap_u8() == 1);
+        assert_eq!(w1.binding_tag, w2.binding_tag);
+    }
 
-   #[test]
-   fn test_authentic_witness_different_sessions() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "correct horse battery staple".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
-       let root_n = find_working_root_n();
-       let space = WitnessSpace::new(root_n, 3);
-       let id = b"alice@example.com";
+    #[test]
+    fn test_authentic_witness_different_sessions() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "correct horse battery staple".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let root_n = find_working_root_n();
+        let space = WitnessSpace::new(root_n, 3);
+        let id = b"alice@example.com";
 
-       let w1 = master
-           .generate_authentic_witness(&space, id, b"sess-1")
-           .expect("Failed to generate witness for sess-1");
-       let w2 = master
-           .generate_authentic_witness(&space, id, b"sess-2")
-           .expect("Failed to generate witness for sess-2");
+        let w1 = master
+            .generate_authentic_witness(&space, id, b"sess-1")
+            .expect("Failed to generate witness for sess-1");
+        let w2 = master
+            .generate_authentic_witness(&space, id, b"sess-2")
+            .expect("Failed to generate witness for sess-2");
 
-       assert!(chains_equal_ct(&w1.chain, &w2.chain).unwrap_u8() == 0);
-   }
+        assert!(chains_equal_ct(&w1.chain, &w2.chain).unwrap_u8() == 0);
+    }
 
-   #[test]
-   fn test_alternative_witness_differs_from_authentic() {
-       let (_master, space, authentic) = generate_test_witness();
-       let mut rng = OsRng;
-       let alibi = space
-           .generate_alternative_witness(&authentic, &mut rng)
-           .expect("Failed to generate alternative witness");
+    #[test]
+    fn test_alternative_witness_differs_from_authentic() {
+        let (_master, space, authentic) = generate_test_witness();
+        let mut rng = OsRng;
+        let alibi = space
+            .generate_alternative_witness(&authentic, &mut rng)
+            .expect("Failed to generate alternative witness");
 
-       assert!(chains_equal_ct(&authentic.chain, &alibi.0.chain).unwrap_u8() == 0);
-       assert_ne!(alibi.0.binding_tag, authentic.binding_tag);
-   }
+        assert!(chains_equal_ct(&authentic.chain, &alibi.0.chain).unwrap_u8() == 0);
+        assert_ne!(alibi.0.binding_tag, authentic.binding_tag);
+    }
 
-   #[test]
-   fn test_membership_verification_valid() {
-       let (_master, space, authentic) = generate_test_witness();
-       let status = space.verify_membership(&authentic);
-       assert_eq!(status, WitnessStatus::ValidButUnbound);
-   }
+    #[test]
+    fn test_membership_verification_valid() {
+        let (_master, space, authentic) = generate_test_witness();
+        let status = space.verify_membership(&authentic);
+        assert_eq!(status, WitnessStatus::ValidButUnbound);
+    }
 
-   #[test]
-   fn test_membership_verification_invalid() {
-       let space = WitnessSpace::new(3_000_001, 3);
-       let fake_witness = Witness {
-           chain: MrsChain {
-               layers: vec![
-                   DiophantinePair { a: 1, b: 1 },
-                   DiophantinePair { a: 1, b: 1 },
-                   DiophantinePair { a: 1, b: 1 },
-               ],
-               valid: true,
-           },
-           binding_tag: [0u8; 32],
-           session_id: b"test".to_vec(),
-       };
-       let status = space.verify_membership(&fake_witness);
-       assert_eq!(status, WitnessStatus::Invalid);
-   }
+    #[test]
+    fn test_membership_verification_invalid() {
+        let space = WitnessSpace::new(3_000_001, 3);
+        let fake_witness = Witness {
+            chain: MrsChain {
+                layers: vec![
+                    DiophantinePair { a: 1, b: 1 },
+                    DiophantinePair { a: 1, b: 1 },
+                    DiophantinePair { a: 1, b: 1 },
+                ],
+                valid: true,
+            },
+            binding_tag: [0u8; 32],
+            session_id: b"test".to_vec(),
+        };
+        let status = space.verify_membership(&fake_witness);
+        assert_eq!(status, WitnessStatus::Invalid);
+    }
 
-   #[test]
-   fn test_binding_authenticity_success() {
-       let (master, _space, authentic) = generate_test_witness();
-       let id = b"alice@example.com";
-       let status = master.verify_authenticity(&authentic, id);
-       assert_eq!(status, WitnessStatus::Authentic);
-   }
+    #[test]
+    fn test_binding_authenticity_success() {
+        let (master, _space, authentic) = generate_test_witness();
+        let id = b"alice@example.com";
+        let status = master.verify_authenticity(&authentic, id);
+        assert_eq!(status, WitnessStatus::Authentic);
+    }
 
-   #[test]
-   fn test_binding_authenticity_wrong_identity() {
-       let (master, _space, authentic) = generate_test_witness();
-       let status = master.verify_authenticity(&authentic, b"eve@evil.com");
-       assert_eq!(status, WitnessStatus::BindingMismatch);
-   }
+    #[test]
+    fn test_binding_authenticity_wrong_identity() {
+        let (master, _space, authentic) = generate_test_witness();
+        let status = master.verify_authenticity(&authentic, b"eve@evil.com");
+        assert_eq!(status, WitnessStatus::BindingMismatch);
+    }
 
-   #[test]
-   fn test_alibi_passes_membership() {
-       let (master, space, authentic) = generate_test_witness();
-       let mut rng = OsRng;
-       let alibi = space
-           .generate_alternative_witness(&authentic, &mut rng)
-           .expect("Failed to generate alternative witness");
+    #[test]
+    fn test_alibi_passes_membership() {
+        let (master, space, authentic) = generate_test_witness();
+        let mut rng = OsRng;
+        let alibi = space
+            .generate_alternative_witness(&authentic, &mut rng)
+            .expect("Failed to generate alternative witness");
 
-       let status = space.verify_membership(&alibi.0);
-       assert_eq!(status, WitnessStatus::ValidButUnbound);
+        let status = space.verify_membership(&alibi.0);
+        assert_eq!(status, WitnessStatus::ValidButUnbound);
 
-       let id = b"alice@example.com";
-       let binding_check = master.verify_authenticity(&alibi.0, id);
-       assert_eq!(binding_check, WitnessStatus::BindingMismatch);
-   }
+        let id = b"alice@example.com";
+        let binding_check = master.verify_authenticity(&alibi.0, id);
+        assert_eq!(binding_check, WitnessStatus::BindingMismatch);
+    }
 
-   #[test]
-   fn test_coercion_resistance_indistinguishability() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "correct horse battery staple".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
-       let root_n = find_working_root_n();
-       let space = WitnessSpace::new(root_n, 3);
-       let id = b"alice@example.com";
+    #[test]
+    fn test_coercion_resistance_indistinguishability() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "correct horse battery staple".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let root_n = find_working_root_n();
+        let space = WitnessSpace::new(root_n, 3);
+        let id = b"alice@example.com";
 
-       let mut authentic_a_sums = Vec::new();
-       let mut alibi_a_sums = Vec::new();
-       let mut rng = OsRng;
-       let num_samples = 500;
-       let mut success_count = 0;
+        let mut authentic_a_sums = Vec::new();
+        let mut alibi_a_sums = Vec::new();
+        let mut rng = OsRng;
+        let num_samples = 500;
+        let mut success_count = 0;
 
-       for i in 0..num_samples {
-           let session = format!("sess-{}", i);
-           if let Some(auth) = master.generate_authentic_witness(&space, id, session.as_bytes()) {
-               if let Some(alibi) = space.generate_alternative_witness(&auth, &mut rng) {
-                   let auth_sum: u64 = auth.chain.layers.iter().map(|p| p.a).sum();
-                   let alibi_sum: u64 = alibi.0.chain.layers.iter().map(|p| p.a).sum();
-                   authentic_a_sums.push(auth_sum);
-                   alibi_a_sums.push(alibi_sum);
-                   success_count += 1;
-               }
-           }
-       }
+        for i in 0..num_samples {
+            let session = format!("sess-{}", i);
+            if let Some(auth) = master.generate_authentic_witness(&space, id, session.as_bytes()) {
+                if let Some(alibi) = space.generate_alternative_witness(&auth, &mut rng) {
+                    let auth_sum: u64 = auth.chain.layers.iter().map(|p| p.a).sum();
+                    let alibi_sum: u64 = alibi.0.chain.layers.iter().map(|p| p.a).sum();
+                    authentic_a_sums.push(auth_sum);
+                    alibi_a_sums.push(alibi_sum);
+                    success_count += 1;
+                }
+            }
+        }
 
-       if success_count < 10 {
-           eprintln!(
-               "[WARN] Only {} successful samples generated, skipping statistical test",
-               success_count
-           );
-           return;
-       }
+        if success_count < 10 {
+            eprintln!(
+                "[WARN] Only {} successful samples generated, skipping statistical test",
+                success_count
+            );
+            return;
+        }
 
-       let auth_mean = authentic_a_sums.iter().sum::<u64>() as f64 / authentic_a_sums.len() as f64;
-       let alibi_mean = alibi_a_sums.iter().sum::<u64>() as f64 / alibi_a_sums.len() as f64;
-       let diff_pct = (auth_mean - alibi_mean).abs() / auth_mean;
+        let auth_mean = authentic_a_sums.iter().sum::<u64>() as f64 / authentic_a_sums.len() as f64;
+        let alibi_mean = alibi_a_sums.iter().sum::<u64>() as f64 / alibi_a_sums.len() as f64;
+        let diff_pct = (auth_mean - alibi_mean).abs() / auth_mean;
 
-       assert!(
+        assert!(
            diff_pct < 0.10,
            "Authentic and alibi witnesses are statistically distinguishable: auth_mean={}, alibi_mean={}, diff={:.2}%",
            auth_mean,
            alibi_mean,
            diff_pct * 100.0
        );
-   }
+    }
 
-   #[test]
-   fn test_duress_key_derivation() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "correct horse battery staple".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let auth_config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let duress_input = MasterSecret::derive_duress_input(&input, "PANIC");
-       let duress_config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Duress,
-       };
+    #[test]
+    fn test_duress_key_derivation() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "correct horse battery staple".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let auth_config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let duress_input = MasterSecret::derive_duress_input(&input, "PANIC");
+        let duress_config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Duress,
+        };
 
-       let authentic = MasterSecret::derive(&input, &auth_config).unwrap();
-       let duress = MasterSecret::derive(&duress_input, &duress_config).unwrap();
+        let authentic = MasterSecret::derive(&input, &auth_config).unwrap();
+        let duress = MasterSecret::derive(&duress_input, &duress_config).unwrap();
 
-       // Keys must be completely different
-       assert_ne!(authentic.key_bytes(), duress.key_bytes());
-       assert_eq!(authentic.mode(), SecretMode::Authentic);
-       assert_eq!(duress.mode(), SecretMode::Duress);
-   }
+        // Keys must be completely different
+        assert_ne!(authentic.key_bytes(), duress.key_bytes());
+        assert_eq!(authentic.mode(), SecretMode::Authentic);
+        assert_eq!(duress.mode(), SecretMode::Duress);
+    }
 
-   #[test]
-   fn test_duress_witness_unbound() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "correct horse battery staple".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let duress_input = MasterSecret::derive_duress_input(&input, "PANIC");
-       let duress_config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Duress,
-       };
-       let duress_master = MasterSecret::derive(&duress_input, &duress_config).unwrap();
+    #[test]
+    fn test_duress_witness_unbound() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "correct horse battery staple".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let duress_input = MasterSecret::derive_duress_input(&input, "PANIC");
+        let duress_config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Duress,
+        };
+        let duress_master = MasterSecret::derive(&duress_input, &duress_config).unwrap();
 
-       let root_n = find_working_root_n();
-       let space = WitnessSpace::new(root_n, 3);
-       let id = b"alice@example.com";
-       let session = b"session-2026-08-28";
+        let root_n = find_working_root_n();
+        let space = WitnessSpace::new(root_n, 3);
+        let id = b"alice@example.com";
+        let session = b"session-2026-08-28";
 
-       let duress_witness = duress_master
-           .generate_authentic_witness(&space, id, session)
-           .expect("Failed to generate duress witness");
+        let duress_witness = duress_master
+            .generate_authentic_witness(&space, id, session)
+            .expect("Failed to generate duress witness");
 
-       // Duress witness is mathematically valid
-       assert_eq!(
-           space.verify_membership(&duress_witness),
-           WitnessStatus::ValidButUnbound
-       );
+        // Duress witness is mathematically valid
+        assert_eq!(
+            space.verify_membership(&duress_witness),
+            WitnessStatus::ValidButUnbound
+        );
 
-       // But NOT bound to the identity
-       let authentic_master = {
-           let auth_config = SecretConfig {
-               argon2_params: Argon2Params::default(),
-               mode: SecretMode::Authentic,
-           };
-           MasterSecret::derive(&input, &auth_config).unwrap()
-       };
-       let binding_check = authentic_master.verify_authenticity(&duress_witness, id);
-       assert_eq!(binding_check, WitnessStatus::BindingMismatch);
-   }
+        // But NOT bound to the identity
+        let authentic_master = {
+            let auth_config = SecretConfig {
+                argon2_params: Argon2Params::default(),
+                mode: SecretMode::Authentic,
+            };
+            MasterSecret::derive(&input, &auth_config).unwrap()
+        };
+        let binding_check = authentic_master.verify_authenticity(&duress_witness, id);
+        assert_eq!(binding_check, WitnessStatus::BindingMismatch);
+    }
 
-   #[test]
-   fn test_duress_indistinguishability() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "correct horse battery staple".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let auth_config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let duress_input = MasterSecret::derive_duress_input(&input, "PANIC");
-       let duress_config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Duress,
-       };
+    #[test]
+    fn test_duress_indistinguishability() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "correct horse battery staple".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let auth_config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let duress_input = MasterSecret::derive_duress_input(&input, "PANIC");
+        let duress_config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Duress,
+        };
 
-       let authentic_master = MasterSecret::derive(&input, &auth_config).unwrap();
-       let duress_master = MasterSecret::derive(&duress_input, &duress_config).unwrap();
+        let authentic_master = MasterSecret::derive(&input, &auth_config).unwrap();
+        let duress_master = MasterSecret::derive(&duress_input, &duress_config).unwrap();
 
-       let root_n = find_working_root_n();
-       let space = WitnessSpace::new(root_n, 3);
-       let id = b"alice@example.com";
+        let root_n = find_working_root_n();
+        let space = WitnessSpace::new(root_n, 3);
+        let id = b"alice@example.com";
 
-       let mut auth_sums = Vec::new();
-       let mut duress_sums = Vec::new();
-       let num_samples = 200;
-       let mut success_count = 0;
+        let mut auth_sums = Vec::new();
+        let mut duress_sums = Vec::new();
+        let num_samples = 200;
+        let mut success_count = 0;
 
-       for i in 0..num_samples {
-           let session = format!("duress-sess-{}", i);
-           if let Some(auth) =
-               authentic_master.generate_authentic_witness(&space, id, session.as_bytes())
-           {
-               if let Some(duress) =
-                   duress_master.generate_authentic_witness(&space, id, session.as_bytes())
-               {
-                   let auth_sum: u64 = auth.chain.layers.iter().map(|p| p.a).sum();
-                   let duress_sum: u64 = duress.chain.layers.iter().map(|p| p.a).sum();
-                   auth_sums.push(auth_sum);
-                   duress_sums.push(duress_sum);
-                   success_count += 1;
-               }
-           }
-       }
+        for i in 0..num_samples {
+            let session = format!("duress-sess-{}", i);
+            if let Some(auth) =
+                authentic_master.generate_authentic_witness(&space, id, session.as_bytes())
+            {
+                if let Some(duress) =
+                    duress_master.generate_authentic_witness(&space, id, session.as_bytes())
+                {
+                    let auth_sum: u64 = auth.chain.layers.iter().map(|p| p.a).sum();
+                    let duress_sum: u64 = duress.chain.layers.iter().map(|p| p.a).sum();
+                    auth_sums.push(auth_sum);
+                    duress_sums.push(duress_sum);
+                    success_count += 1;
+                }
+            }
+        }
 
-       if success_count < 10 {
-           eprintln!(
-               "[WARN] Only {} successful samples for duress test, skipping",
-               success_count
-           );
-           return;
-       }
+        if success_count < 10 {
+            eprintln!(
+                "[WARN] Only {} successful samples for duress test, skipping",
+                success_count
+            );
+            return;
+        }
 
-       let auth_mean = auth_sums.iter().sum::<u64>() as f64 / auth_sums.len() as f64;
-       let duress_mean = duress_sums.iter().sum::<u64>() as f64 / duress_sums.len() as f64;
-       let diff_pct = (auth_mean - duress_mean).abs() / auth_mean;
+        let auth_mean = auth_sums.iter().sum::<u64>() as f64 / auth_sums.len() as f64;
+        let duress_mean = duress_sums.iter().sum::<u64>() as f64 / duress_sums.len() as f64;
+        let diff_pct = (auth_mean - duress_mean).abs() / auth_mean;
 
-       assert!(
+        assert!(
            diff_pct < 0.10,
            "Authentic and duress witnesses are statistically distinguishable: auth_mean={}, duress_mean={}, diff={:.2}%",
            auth_mean,
            duress_mean,
            diff_pct * 100.0
        );
-   }
+    }
 
-   #[test]
-   fn test_seal_unseal_roundtrip() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "correct horse battery staple".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
-       let device_key = [42u8; 32];
+    #[test]
+    fn test_seal_unseal_roundtrip() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "correct horse battery staple".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let device_key = [42u8; 32];
 
-       let sealed = master.seal(&device_key);
-       let recovered = MasterSecret::unseal(&sealed, &device_key).expect("unseal failed");
+        let sealed = master.seal(&device_key);
+        let recovered = MasterSecret::unseal(&sealed, &device_key).expect("unseal failed");
 
-       assert_eq!(master.mode(), recovered.mode());
-       assert_eq!(master.key_bytes(), recovered.key_bytes());
-   }
+        assert_eq!(master.mode(), recovered.mode());
+        assert_eq!(master.key_bytes(), recovered.key_bytes());
+    }
 
-   #[test]
-   fn test_seal_unseal_wrong_key_fails() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "correct horse battery staple".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
-       let device_key = [42u8; 32];
-       let wrong_key = [99u8; 32];
+    #[test]
+    fn test_seal_unseal_wrong_key_fails() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "correct horse battery staple".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let device_key = [42u8; 32];
+        let wrong_key = [99u8; 32];
 
-       let sealed = master.seal(&device_key);
-       let result = MasterSecret::unseal(&sealed, &wrong_key);
-       assert!(result.is_err());
-   }
+        let sealed = master.seal(&device_key);
+        let result = MasterSecret::unseal(&sealed, &wrong_key);
+        assert!(result.is_err());
+    }
 
-   #[test]
-   fn test_witness_generation_retries() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "correct horse battery staple".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
-       let root_n = find_working_root_n();
-       let space = WitnessSpace::new(root_n, 3);
-       let id = b"test@example.com";
+    #[test]
+    fn test_witness_generation_retries() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "correct horse battery staple".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let root_n = find_working_root_n();
+        let space = WitnessSpace::new(root_n, 3);
+        let id = b"test@example.com";
 
-       for i in 0..10 {
-           let session = format!("retry-test-{}", i);
-           let result = master.generate_authentic_witness(&space, id, session.as_bytes());
-           if let Some(witness) = result {
-               assert!(witness.chain.valid);
-               assert_eq!(witness.chain.layers.len(), 3);
-           }
-       }
-       println!("[INFO] Retry test passed without panics");
-   }
+        for i in 0..10 {
+            let session = format!("retry-test-{}", i);
+            let result = master.generate_authentic_witness(&space, id, session.as_bytes());
+            if let Some(witness) = result {
+                assert!(witness.chain.valid);
+                assert_eq!(witness.chain.layers.len(), 3);
+            }
+        }
+        println!("[INFO] Retry test passed without panics");
+    }
 
-   #[test]
-   fn test_prover_space_trait() {
-       let (master, space, authentic) = generate_test_witness();
-       let mut rng = OsRng;
+    #[test]
+    fn test_prover_space_trait() {
+        let (master, space, authentic) = generate_test_witness();
+        let mut rng = OsRng;
 
-       let alibi = <WitnessSpace as ProverSpace>::generate_alibi(&space, &authentic, &mut rng)
-           .expect("trait alibi generation failed");
+        let alibi = <WitnessSpace as ProverSpace>::generate_alibi(&space, &authentic, &mut rng)
+            .expect("trait alibi generation failed");
 
-       assert_eq!(
-           space.verify_membership(&alibi.0),
-           WitnessStatus::ValidButUnbound
-       );
-       assert_eq!(
-           master.verify_authenticity(&alibi.0, b"alice@example.com"),
-           WitnessStatus::BindingMismatch
-       );
-   }
+        assert_eq!(
+            space.verify_membership(&alibi.0),
+            WitnessStatus::ValidButUnbound
+        );
+        assert_eq!(
+            master.verify_authenticity(&alibi.0, b"alice@example.com"),
+            WitnessStatus::BindingMismatch
+        );
+    }
 
-   // =============================================================================
-   // Shamir Secret Sharing Tests
-   // =============================================================================
+    // =============================================================================
+    // Shamir Secret Sharing Tests
+    // =============================================================================
 
-   #[test]
-   fn test_shamir_split_recover_exact_threshold() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "shamir test password".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
-       let original_key = *master.key_bytes();
+    #[test]
+    fn test_shamir_split_recover_exact_threshold() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let original_key = *master.key_bytes();
 
-       // 3-of-5 scheme
-       let (shares, commitment) = master.split(3, 5).expect("split failed");
-       assert_eq!(shares.len(), 5);
+        // 3-of-5 scheme
+        let (shares, commitment) = master.split(3, 5).expect("split failed");
+        assert_eq!(shares.len(), 5);
 
-       // Recover with exactly 3 shares (indices 0, 2, 4)
-       let subset = vec![shares[0].clone(), shares[2].clone(), shares[4].clone()];
-       let recovered = MasterSecret::recover(&subset, &commitment, SecretMode::Authentic)
-           .expect("recover failed");
-       assert_eq!(recovered.key_bytes(), &original_key);
-       assert_eq!(recovered.mode(), SecretMode::Authentic);
-   }
+        // Recover with exactly 3 shares (indices 0, 2, 4)
+        let subset = vec![shares[0].clone(), shares[2].clone(), shares[4].clone()];
+        let recovered = MasterSecret::recover(&subset, &commitment, SecretMode::Authentic)
+            .expect("recover failed");
+        assert_eq!(recovered.key_bytes(), &original_key);
+        assert_eq!(recovered.mode(), SecretMode::Authentic);
+    }
 
-   #[test]
-   fn test_shamir_split_recover_all_shares() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "shamir test password".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
-       let original_key = *master.key_bytes();
+    #[test]
+    fn test_shamir_split_recover_all_shares() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let original_key = *master.key_bytes();
 
-       // 2-of-4 scheme
-       let (shares, commitment) = master.split(2, 4).expect("split failed");
-       let recovered = MasterSecret::recover(&shares, &commitment, SecretMode::Authentic)
-           .expect("recover failed");
-       assert_eq!(recovered.key_bytes(), &original_key);
-   }
+        // 2-of-4 scheme
+        let (shares, commitment) = master.split(2, 4).expect("split failed");
+        let recovered = MasterSecret::recover(&shares, &commitment, SecretMode::Authentic)
+            .expect("recover failed");
+        assert_eq!(recovered.key_bytes(), &original_key);
+    }
 
-   #[test]
-   fn test_shamir_split_recover_different_subsets() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "shamir test password".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
-       let original_key = *master.key_bytes();
+    #[test]
+    fn test_shamir_split_recover_different_subsets() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
+        let original_key = *master.key_bytes();
 
-       let (shares, commitment) = master.split(3, 5).expect("split failed");
+        let (shares, commitment) = master.split(3, 5).expect("split failed");
 
-       // Try multiple 3-share subsets
-       let subsets = vec![
-           vec![shares[0].clone(), shares[1].clone(), shares[2].clone()],
-           vec![shares[1].clone(), shares[3].clone(), shares[4].clone()],
-           vec![shares[0].clone(), shares[3].clone(), shares[4].clone()],
-       ];
+        // Try multiple 3-share subsets
+        let subsets = vec![
+            vec![shares[0].clone(), shares[1].clone(), shares[2].clone()],
+            vec![shares[1].clone(), shares[3].clone(), shares[4].clone()],
+            vec![shares[0].clone(), shares[3].clone(), shares[4].clone()],
+        ];
 
-       for subset in subsets {
-           let recovered = MasterSecret::recover(&subset, &commitment, SecretMode::Authentic)
-               .expect("recover failed");
-           assert_eq!(recovered.key_bytes(), &original_key);
-       }
-   }
+        for subset in subsets {
+            let recovered = MasterSecret::recover(&subset, &commitment, SecretMode::Authentic)
+                .expect("recover failed");
+            assert_eq!(recovered.key_bytes(), &original_key);
+        }
+    }
 
-   #[test]
-   fn test_shamir_split_invalid_parameters() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "shamir test password".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
+    #[test]
+    fn test_shamir_split_invalid_parameters() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
 
-       // Threshold too low
-       assert!(master.split(1, 5).is_err());
-       // Shares < threshold
-       assert!(master.split(3, 2).is_err());
-       // Shares > 255
-       assert!(master.split(3, 256).is_err());
-   }
+        // Threshold too low
+        assert!(master.split(1, 5).is_err());
+        // Shares < threshold
+        assert!(master.split(3, 2).is_err());
+        // Shares > 255
+        assert!(master.split(3, 256).is_err());
+    }
 
-   #[test]
-   fn test_shamir_recover_duplicate_shares_fails() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "shamir test password".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
+    #[test]
+    fn test_shamir_recover_duplicate_shares_fails() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
 
-       let (shares, commitment) = master.split(3, 5).expect("split failed");
-       let bad_subset = vec![shares[0].clone(), shares[0].clone(), shares[1].clone()];
-       assert!(matches!(
-           MasterSecret::recover(&bad_subset, &commitment, SecretMode::Authentic),
-           Err(DeriveError::DuplicateShares)
-       ));
-   }
+        let (shares, commitment) = master.split(3, 5).expect("split failed");
+        let bad_subset = vec![shares[0].clone(), shares[0].clone(), shares[1].clone()];
+        assert!(matches!(
+            MasterSecret::recover(&bad_subset, &commitment, SecretMode::Authentic),
+            Err(DeriveError::DuplicateShares)
+        ));
+    }
 
-   #[test]
-   fn test_shamir_mode_preserved() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "shamir test password".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Duress,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
+    #[test]
+    fn test_shamir_mode_preserved() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Duress,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
 
-       let (shares, commitment) = master.split(3, 5).expect("split failed");
-       let recovered = MasterSecret::recover(&shares, &commitment, SecretMode::Duress)
-           .expect("recover failed");
-       assert_eq!(recovered.mode(), SecretMode::Duress);
-   }
+        let (shares, commitment) = master.split(3, 5).expect("split failed");
+        let recovered = MasterSecret::recover(&shares, &commitment, SecretMode::Duress)
+            .expect("recover failed");
+        assert_eq!(recovered.mode(), SecretMode::Duress);
+    }
 
-   #[test]
-   fn test_shamir_share_indices_unique() {
-       let salt = [0u8; 16];
-       let input = SecretInput {
-           password: "shamir test password".to_string(),
-           hardware_token: None,
-           biometric_hash: None,
-           salt,
-       };
-       let config = SecretConfig {
-           argon2_params: Argon2Params::default(),
-           mode: SecretMode::Authentic,
-       };
-       let master = MasterSecret::derive(&input, &config).unwrap();
+    #[test]
+    fn test_shamir_share_indices_unique() {
+        let salt = [0u8; 16];
+        let input = SecretInput {
+            password: "shamir test password".to_string(),
+            hardware_token: None,
+            biometric_hash: None,
+            salt,
+        };
+        let config = SecretConfig {
+            argon2_params: Argon2Params::default(),
+            mode: SecretMode::Authentic,
+        };
+        let master = MasterSecret::derive(&input, &config).unwrap();
 
-       let (shares, _commitment) = master.split(3, 5).expect("split failed");
-       let mut indices = std::collections::HashSet::new();
-       for share in &shares {
-           assert!(
-               indices.insert(share.index),
-               "Duplicate index found: {}",
-               share.index
-           );
-           assert_ne!(share.index, 0);
-       }
-       assert_eq!(indices.len(), 5);
-   }
+        let (shares, _commitment) = master.split(3, 5).expect("split failed");
+        let mut indices = std::collections::HashSet::new();
+        for share in &shares {
+            assert!(
+                indices.insert(share.index),
+                "Duplicate index found: {}",
+                share.index
+            );
+            assert_ne!(share.index, 0);
+        }
+        assert_eq!(indices.len(), 5);
+    }
 
-   #[test]
-   fn verify_membership_raw_rejects_without_early_exit_shortcuts() {
-       // A chain that fails at the very first layer and one that fails
-       // only at the last layer should both be rejected identically,
-       // there is no early return left to make the first case faster
-       // than the second.
-       let space = WitnessSpace::new(3_000_001, 3);
+    #[test]
+    fn verify_membership_raw_rejects_without_early_exit_shortcuts() {
+        // A chain that fails at the very first layer and one that fails
+        // only at the last layer should both be rejected identically,
+        // there is no early return left to make the first case faster
+        // than the second.
+        let space = WitnessSpace::new(3_000_001, 3);
 
-       let fails_first = Witness {
-           chain: MrsChain {
-               layers: vec![
-                   DiophantinePair { a: 1, b: 1 }, // wrong immediately
-                   DiophantinePair { a: 1, b: 1 },
-                   DiophantinePair { a: 1, b: 1 },
-               ],
-               valid: true,
-           },
-           binding_tag: [0u8; 32],
-           session_id: b"test".to_vec(),
-       };
+        let fails_first = Witness {
+            chain: MrsChain {
+                layers: vec![
+                    DiophantinePair { a: 1, b: 1 }, // wrong immediately
+                    DiophantinePair { a: 1, b: 1 },
+                    DiophantinePair { a: 1, b: 1 },
+                ],
+                valid: true,
+            },
+            binding_tag: [0u8; 32],
+            session_id: b"test".to_vec(),
+        };
 
-       let (real_master, real_space, real_witness) = generate_test_witness();
-       let mut fails_last = real_witness.chain.clone();
-       if let Some(last) = fails_last.layers.last_mut() {
-           last.a = last.a.wrapping_add(1); // break only the final layer
-       }
-       let fails_last_witness = Witness {
-           chain: fails_last,
-           binding_tag: real_witness.binding_tag,
-           session_id: real_witness.session_id.clone(),
-       };
+        let (real_master, real_space, real_witness) = generate_test_witness();
+        let mut fails_last = real_witness.chain.clone();
+        if let Some(last) = fails_last.layers.last_mut() {
+            last.a = last.a.wrapping_add(1); // break only the final layer
+        }
+        let fails_last_witness = Witness {
+            chain: fails_last,
+            binding_tag: real_witness.binding_tag,
+            session_id: real_witness.session_id.clone(),
+        };
 
-       assert_eq!(
-           space.verify_membership(&fails_first),
-           WitnessStatus::Invalid
-       );
-       assert_eq!(
-           real_space.verify_membership(&fails_last_witness),
-           WitnessStatus::Invalid
-       );
-       let _ = real_master; // silence unused warning if generate_test_witness signature changes
-   }
+        assert_eq!(
+            space.verify_membership(&fails_first),
+            WitnessStatus::Invalid
+        );
+        assert_eq!(
+            real_space.verify_membership(&fails_last_witness),
+            WitnessStatus::Invalid
+        );
+        let _ = real_master; // silence unused warning if generate_test_witness signature changes
+    }
 }

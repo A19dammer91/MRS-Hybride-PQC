@@ -125,4 +125,4 @@ mod tests {
 
         assert_eq!(plaintext.to_vec(), recovered);
     }
-        }
+}
