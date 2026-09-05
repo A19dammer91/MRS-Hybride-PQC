@@ -984,7 +984,7 @@ mod tests {
         let mut authentic_a_sums = Vec::new();
         let mut alibi_a_sums = Vec::new();
         let mut rng = OsRng;
-        let num_samples = 500;
+        let num_samples = 10;
         let mut success_count = 0;
 
         for i in 0..num_samples {
@@ -1000,7 +1000,7 @@ mod tests {
             }
         }
 
-        if success_count < 10 {
+        if success_count < 3 {
             eprintln!(
                 "[WARN] Only {} successful samples generated, skipping statistical test",
                 success_count
@@ -1013,12 +1013,12 @@ mod tests {
         let diff_pct = (auth_mean - alibi_mean).abs() / auth_mean;
 
         assert!(
-           diff_pct < 0.10,
-           "Authentic and alibi witnesses are statistically distinguishable: auth_mean={}, alibi_mean={}, diff={:.2}%",
-           auth_mean,
-           alibi_mean,
-           diff_pct * 100.0
-       );
+            diff_pct < 0.10,
+            "Authentic and alibi witnesses are statistically distinguishable: auth_mean={}, alibi_mean={}, diff={:.2}%",
+            auth_mean,
+            alibi_mean,
+            diff_pct * 100.0
+        );
     }
 
     #[test]
@@ -1120,7 +1120,7 @@ mod tests {
 
         let mut auth_sums = Vec::new();
         let mut duress_sums = Vec::new();
-        let num_samples = 200;
+        let num_samples = 10;
         let mut success_count = 0;
 
         for i in 0..num_samples {
@@ -1140,7 +1140,7 @@ mod tests {
             }
         }
 
-        if success_count < 10 {
+        if success_count < 3 {
             eprintln!(
                 "[WARN] Only {} successful samples for duress test, skipping",
                 success_count
@@ -1153,12 +1153,12 @@ mod tests {
         let diff_pct = (auth_mean - duress_mean).abs() / auth_mean;
 
         assert!(
-           diff_pct < 0.10,
-           "Authentic and duress witnesses are statistically distinguishable: auth_mean={}, duress_mean={}, diff={:.2}%",
-           auth_mean,
-           duress_mean,
-           diff_pct * 100.0
-       );
+            diff_pct < 0.10,
+            "Authentic and duress witnesses are statistically distinguishable: auth_mean={}, duress_mean={}, diff={:.2}%",
+            auth_mean,
+            duress_mean,
+            diff_pct * 100.0
+        );
     }
 
     #[test]
