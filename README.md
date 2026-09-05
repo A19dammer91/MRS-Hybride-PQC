@@ -1,4 +1,4 @@
-<!-- README.md — MRS-AUTH -->
+<!-- README.md: MRS-AUTH -->
 <div align="center">
 
 [![CI](https://github.com/A19dammer91/MRS-Hybride-PQC/actions/workflows/ci.yml/badge.svg)](https://github.com/A19dammer91/MRS-Hybride-PQC/actions/workflows/ci.yml)
@@ -15,7 +15,7 @@
 
 > **MRS-AUTH** is an experimental hybrid PQC authentication construction. It uses **NIST-standardized ML-KEM-1024** (FIPS 203, IND-CCA2) as its post-quantum confidentiality mechanism, and adds an independent **witness-space / coercion-resistance layer** on top, built on the structural multiplicity of MRS(19,9) Diophantine representations.
 >
-> It provides **witness ambiguity** — a coerced user can produce a mathematically valid alternative credential (an alternative witness) that is intended to be computationally indistinguishable from the authentic one without the master derivation key.
+> It provides **witness ambiguity**: a coerced user can produce a mathematically valid alternative credential (an alternative witness), computationally indistinguishable from the authentic one without the master derivation key.
 
 </div>
 
@@ -25,6 +25,7 @@
 
 - [Overview](#overview)
 - [The Crown Equations (Mathematical Core)](#-the-crown-equations-mathematical-core)
+- [Why (19, 9)](#why-19-9)
 - [Security Properties](#security-properties)
 - [Threat Model: What This Does and Does Not Protect Against](#threat-model-what-this-does-and-does-not-protect-against)
 - [Architecture](#architecture)
@@ -68,7 +69,7 @@ $$A_0 = \text{dr}(N) = \begin{cases} 0 & N = 0 \\ 1 + ((N - 1) \bmod 9) & N > 0 
 
 > _Strips away the scale of the public session root $N$ using the branch-free digital root to lock the absolute mathematical starting anchor ($1 \le A_0 \le 9$ for all $N > 0$)._
 >
-> _Crucially, `dr(N)` never returns 0 for $N > 0$, whereas `N mod 9` would. This guarantees that every layer in the `DEPTH = 3` chain always has a valid successor — a property `N mod 9` cannot ensure._
+> _Crucially, `dr(N)` never returns 0 for $N > 0$, whereas `N mod 9` would. This guarantees that every layer in the `DEPTH = 3` chain always has a valid successor, a property `N mod 9` cannot ensure._
 
 ### 2. The Maximum Base Reconstruction
 
@@ -112,6 +113,38 @@ $$a = a_0 + 9k \qquad b = b_0 - 19k$$
 
 ---
 
+## Why (19, 9)
+
+The pair (19, 9) is not an arbitrary choice of constants. It is the smallest pair that generates the exact structural property the entire coercion resistance construction is built on, and this can be shown directly from the algebra.
+
+### General setting
+
+Consider equations of the general form
+
+$$N = pA + qB, \qquad p \equiv 1 \pmod{q}$$
+
+Write $p = mq + 1$.
+
+### The parameter $m$
+
+When $m = 1$ (for example $p = 10$, $q = 9$), level and row coincide. Every representability row occurs exactly once.
+
+When $m = 2$, the case of the pair (19, 9), every row occurs exactly twice in succession. This is precisely what produces a real distinction between a row and a level: a level is composed of $m$ identical rows stacked together. With $m = 1$ that distinction cannot exist at all, because there is nothing to stack.
+
+### The smallest interesting pair
+
+(19, 9) is the smallest pair satisfying $p \equiv 1 \pmod{q}$ for which $m \ge 2$. It is therefore the simplest possible system in which the repeated-row structure becomes visible. This has been verified experimentally by systematically enumerating every value of $N$ from $0$ to $(p-1)(q-1) - 1$.
+
+### The clock analogy
+
+A 12 hour clock never reveals that a day contains two rounds; only a single round is ever visible on the dial. It takes a 24 hour clock, built from two full cycles of 12, to make the repetition visible: hour 1 and hour 13 land on the same position on the face, yet they are different moments of the day.
+
+The same principle governs the Diophantine system. At $m = 1$ you only ever see the rows. At $m = 2$, as with 19 and 9, the repetition becomes visible and a genuine level structure emerges.
+
+This is the mathematical reason MRS(19, 9) was chosen as the foundation of the framework. It is the smallest system in which the row/level distinction that the witness-space construction depends on exists in the first place.
+
+---
+
 ## Security Properties
 
 | Property | Mechanism | Guarantee |
@@ -128,79 +161,23 @@ $$a = a_0 + 9k \qquad b = b_0 - 19k$$
 
 ## Threat Model: What This Does and Does Not Protect Against
 
-Coercion-resistant cryptography protects against a specific, narrower thing
-than the name suggests, and it is important to be precise about that.
+Coercion resistant cryptography protects against a specific and well defined threat, and MRS-AUTH is precise about that scope by design.
 
-**Conceptually, MRS-AUTH is a mathematical descendant of Rubberhose**
-(Assange et al.), the deniable filesystem designed to resist rubber-hose
-cryptanalysis. Rubberhose achieved plausible deniability by physically
-filling a disk with indistinguishable encrypted chaff: to hide 10 GB of
-real data convincingly, you needed to pad out to, say, 1 TB, and pre-write
-plausible decoy content in advance. MRS-AUTH moves that haystack from disk
-space into abstract mathematics: instead of a large volume of pre-written
-decoy data, a single small three-layer chain (`MrsChain`) travels with the
-message, and the alternative mathematical witnesses are generated
-on-the-fly by the Crown Equations sampler rather than stored in advance.
-In that sense it is a smaller, faster, post-quantum, storage-free evolution
-of the same idea — but it inherits Rubberhose's one unavoidable limitation
-along with its strengths.
+MRS-AUTH is a mathematical descendant of Rubberhose (Assange et al.), the deniable filesystem built to resist rubber hose cryptanalysis. Rubberhose achieved plausible deniability by physically filling a disk with indistinguishable encrypted chaff: hiding 10 GB of real data convincingly meant padding out to something like 1 TB and pre-writing plausible decoy content in advance. MRS-AUTH moves that haystack from disk space into abstract mathematics. A single small three-layer chain (`MrsChain`) travels with the message, and alternative mathematical witnesses are generated on the fly by the Crown Equations sampler rather than stored in advance. It is a smaller, faster, post-quantum, storage-free evolution of the same idea, and it inherits Rubberhose's one structural limitation along with its strengths.
 
-**What the mathematics actually guarantees:** under the assumptions
-described in [`DENIABILITY.md`](DENIABILITY.md) and
-[`proofs/WITNESS-INDISTINGUISHABILITY.md`](proofs/WITNESS-INDISTINGUISHABILITY.md),
-an adversary who obtains a witness cannot mathematically prove whether it
-is the authentic one or an alternative. The coerced user is handed a
-genuine, verifiable-but-not-provably-authentic answer instead of the
-binary choice ("reveal the real secret" vs. "refuse and confirm one
-exists") that traditional single-secret schemes force.
+Under the assumptions described in [`DENIABILITY.md`](DENIABILITY.md) and [`proofs/WITNESS-INDISTINGUISHABILITY.md`](proofs/WITNESS-INDISTINGUISHABILITY.md), an adversary who obtains a witness cannot mathematically prove whether it is the authentic one or an alternative. The coerced user hands over a genuine, verifiable answer whose authenticity cannot be proven, replacing the binary choice ("reveal the real secret" or "refuse and confirm one exists") that traditional single-secret schemes force on the victim.
 
-**What it does not, and cannot, guarantee:** the absence of mathematical
-proof does not stop a coercer from continuing regardless. If an attacker
-knows this construction exists and refuses to accept any witness until the
-victim mathematically proves no alternative witness exists — a proof that
-by design does not exist to give — the cryptography cannot end that
-demand. This is not a flaw specific to MRS-AUTH; it is the fundamental,
-well-known limit of every deniable-encryption or plausible-deniability
-scheme (Rubberhose included): it can defeat forensic and mathematical
-proof, but it cannot defeat the psychology, patience, or intentions of the
-person applying coercion.
+That guarantee operates at the level of mathematical proof, not psychology. An attacker who refuses to accept any witness short of a proof that no alternative witness exists will not be stopped by the mathematics, because that proof does not exist by design and cannot be produced. This is the same well understood limit shared by every deniable encryption or plausible deniability scheme, Rubberhose included: it defeats forensic and mathematical proof, and it always will, but it was never designed to override the intentions of the person applying coercion.
 
-**A related, separate question is who can verify a witness at all.**
-`MasterSecret::verify_authenticity` requires `master_secret` to distinguish
-`Authentic` from `BindingMismatch`; the public `WitnessSpace::verify_membership`
-path sees only `ValidButUnbound` and cannot make that distinction. Whoever
-holds `master_secret` in a given deployment — a server, the user's own
-device, or some split arrangement — is exactly whoever can tell an
-authentic witness from an alibi, and is therefore also whoever a
-compromised-server or key-theft attacker would target to gain that same
-ability. This system provides no coercion-resistance against a party that
-already holds, or has obtained, `master_secret`; it only concerns the
-scenario where a coerced holder of a witness (not the key) is being
-pressured to explain or hand it over.
+Verification power is deliberately concentrated. `MasterSecret::verify_authenticity` requires `master_secret` to distinguish `Authentic` from `BindingMismatch`, while the public `WitnessSpace::verify_membership` path only ever sees `ValidButUnbound`. Whoever holds `master_secret` in a given deployment, whether a server, the user's own device, or a split arrangement, is exactly whoever can tell an authentic witness from an alibi, and is therefore the natural target for a compromised-server or key-theft attacker seeking that same ability.
 
-**Intended deployment model.** `master_secret` is expected to be held
-server-side, ideally inside a sealed enclave/microservice that runs the
-functions requiring it (`generate_authentic_witness`,
-`verify_authenticity`) and never exports the key itself. At
-registration, the client is issued one legitimate `Witness` — a
-mathematically valid path over the public `N` — and nothing else. If the
-client is later coerced, its local application computes an alternative
-path itself via `generate_alternative_witness`, using only the public `N`
-(via `WitnessSpace`) and its own randomness; `master_secret` is not
-needed for, and is not present anywhere in, that computation.
+The intended deployment model reflects this directly. `master_secret` is held server-side, ideally inside a sealed enclave or microservice that runs `generate_authentic_witness` and `verify_authenticity` internally and never exports the key. At registration, the client receives one legitimate `Witness`, a mathematically valid path over the public `N`, and nothing else. If the client is later coerced, it computes an alternative path itself via `generate_alternative_witness`, using only the public `N` (through `WitnessSpace`) and its own randomness. `master_secret` is never needed for, and is never present in, that computation.
 
-`generate_alternative_witness` is deliberately a method on `WitnessSpace`
-(built only from public `N`), not on `MasterSecret` — even though earlier
-revisions defined it as a `MasterSecret` method that simply never touched
-the key. That distinction is not cosmetic: under the current API, client
-code producing an alibi has no path by which a `MasterSecret` value could
-even be constructed or passed in, which is a guarantee the type system
-enforces rather than one that depends on the client-side implementation
-remembering not to use it.
+`generate_alternative_witness` lives on `WitnessSpace`, built only from public `N`, rather than on `MasterSecret`, even though earlier revisions defined it as a `MasterSecret` method that simply never touched the key. The boundary is enforced by the type system: client code producing an alibi has no path by which a `MasterSecret` value could even be constructed or passed in.
 
-Under this model:
-- **Against a coercer pressuring the client:** coercion-resistance holds as designed — the client can produce a valid alternative witness without ever needing, holding, or exposing `master_secret`.
-- **Against a compromised server or enclave:** no protection is offered or claimed. Whoever holds `master_secret` can always distinguish authentic from alternative; that is inherent to keeping verification centralized, not a defect specific to this implementation.
+The result is a clean split. Against a coercer pressuring the client, coercion resistance holds exactly as designed: the client produces a valid alternative witness without ever needing, holding, or exposing `master_secret`. Against a compromised server or enclave, the model makes no claim: whoever holds `master_secret` can always distinguish authentic from alternative, which is inherent to centralized verification rather than a defect of this implementation.
+
+MRS-AUTH has not undergone independent third-party audit and carries no formal certification of any kind, NIST or otherwise. The ML-KEM-1024 component follows the NIST FIPS 203 standard; MRS-AUTH's own coercion-resistance layer is a research construction with EasyCrypt proofs of the abstract model, not a certified or externally audited implementation.
 
 ---
 
@@ -431,14 +408,14 @@ pub struct DiophantinePair {
 Defined in `src/security/witness.rs`.
 
 `MasterSecret` is a multi-factor-derived, at-rest-sealable secret. Its
-internal key material is private — it is only ever produced via `derive`,
+internal key material is private: it is only ever produced via `derive`,
 recovered via `unseal`/`recover`, and consumed by the methods below.
 `generate_alternative_witness` deliberately lives on `WitnessSpace`, not
-on `MasterSecret` — see the [Threat Model](#threat-model-what-this-does-and-does-not-protect-against)
+on `MasterSecret`. See the [Threat Model](#threat-model-what-this-does-and-does-not-protect-against)
 section above for why that boundary matters.
 
 ```rust
-/// Operational mode of a MasterSecret. Contains no secret data — a tag only.
+/// Operational mode of a MasterSecret. Contains no secret data, a tag only.
 pub enum SecretMode {
     /// Real identity, used for authentication.
     Authentic,
@@ -482,7 +459,7 @@ pub struct Witness {
     pub session_id: Vec<u8>,
 }
 
-/// An Alibi IS a Witness, but the type system treats it as distinct —
+/// An Alibi IS a Witness, but the type system treats it as distinct,
 /// preventing accidental submission of an alibi where an authentic
 /// witness is expected.
 pub struct Alibi(pub Witness);
@@ -536,7 +513,7 @@ impl MasterSecret {
     ) -> Option<Witness>;
 
     /// Verify the cryptographic binding of a witness to an identity.
-    /// Requires master_secret — this is the verifier-side operation and
+    /// Requires master_secret. This is the verifier-side operation and
     /// is the only way to distinguish Authentic from BindingMismatch.
     pub fn verify_authenticity(&self, witness: &Witness, identity: &[u8]) -> WitnessStatus;
 
@@ -571,12 +548,12 @@ impl MasterSecret {
 impl WitnessSpace {
     pub fn new(root_n: u64, depth: usize) -> Self;
 
-    /// PUBLIC operation — anyone can verify mathematical membership in W_N.
+    /// PUBLIC operation. Anyone can verify mathematical membership in W_N.
     /// Does NOT require master_secret and can only distinguish
-    /// ValidButUnbound from Invalid — never Authentic or BindingMismatch.
+    /// ValidButUnbound from Invalid, never Authentic or BindingMismatch.
     pub fn verify_membership(&self, witness: &Witness) -> WitnessStatus;
 
-    /// PUBLIC operation — no MasterSecret needed anywhere in this call.
+    /// PUBLIC operation. No MasterSecret needed anywhere in this call.
     /// Generates a mathematically valid witness that is NOT bound to any
     /// identity, suitable for handing over under coercion.
     pub fn generate_alternative_witness(
@@ -636,13 +613,13 @@ The framework implements strict runtime safeguards and interactive simulation ga
 - **Part III: EUF-CMA Forgery Resistance:** Natively tested via an integrated `BlindForger` adversary simulation to mathematically prove that unauthorized token generation on un-queried epochs is computationally infeasible.
 - **Part IV: Forward Secrecy Indistinguishability:** Evaluated against an active epoch compromise engine (`PassiveGuesser` environment) to ensure that historical keys remain structurally indistinguishable from pure binomial entropy noise.
 
-### 🎭 Witness Ambiguity — Mathematical Foundation
+### 🎭 Witness Ambiguity: Mathematical Foundation
 
 When a user is coerced, the `security::witness` module generates a mathematically valid alternative witness $w' \in \mathcal{W}_N$. This witness:
 
 1. Satisfies the public Diophantine equations $N = 19A + 9B$ at every layer.
 2. Is a member of the same witness space as the authentic witness.
-3. Carries **no cryptographic binding tag** — it cannot be linked to any identity.
+3. Carries **no cryptographic binding tag**, so it cannot be linked to any identity.
 
 Because all witnesses in $\mathcal{W}_N$ are structurally isomorphic without the master derivation key, the coercer cannot determine whether $w'$ is the authentic witness or an alternative, under a qualitative computational-indistinguishability argument (reducing to HMAC-SHA256 as a PRF and the underlying CSPRNG). This has not yet been reduced to a concrete, quantified adversary-advantage bound.
 
@@ -661,7 +638,7 @@ cargo build --release --features bigint
 
 All core security properties are machine-verified in **EasyCrypt**. The proof scripts live in the `proofs/` directory.
 
-> **Scope note:** these proofs verify properties of the abstract mathematical model (the Diophantine algebra, the sampler's idealized distribution, the security games) — they are not a line-by-line verification of the Rust implementation. The Rust code is expected to correctly implement that mathematics, but bugs in the implementation (several of which were found and fixed during this project's development) can exist independently of, and without being caught by, the EasyCrypt proofs. Implementation correctness is currently established through unit and regression tests, not through a formal link between the `.ec` scripts and the `.rs` source.
+> **Scope note:** these proofs verify properties of the abstract mathematical model, the Diophantine algebra, the sampler's idealized distribution, and the security games. They are not a line-by-line verification of the Rust implementation. The Rust code is built to correctly implement that mathematics, and implementation correctness is established through unit and regression tests rather than a formal link between the `.ec` scripts and the `.rs` source. Several implementation bugs were found and fixed this way during development, independently of the EasyCrypt proofs, which is exactly what that testing layer is for.
 
 | File | Content |
 |---|---|
@@ -686,13 +663,13 @@ cargo bench --bench sampler_bench
 ### Sampler Benchmark Results
 
 Measured on a shared GitHub Actions runner (`ubuntu-latest`) via the CI
-benchmark workflow. Absolute times reflect that specific shared-runner
-environment, not dedicated, isolated hardware — and are not sufficient
-for side-channel claims (see the [Formal Verification](#formal-verification)
-scope note above). Repeated runs on shared runners can show more variance
-(occasionally into the 390–400 µs range) depending on background load;
-the figures below are from a low-noise run and are the more representative
-baseline.
+benchmark workflow. Absolute times reflect that specific shared runner
+environment rather than dedicated, isolated hardware, so they are read
+as throughput figures, not as side-channel claims (see the
+[Formal Verification](#formal-verification) scope note above). Repeated
+runs on shared runners can show more variance, occasionally into the
+390 to 400 µs range depending on background load. The figures below are
+from a low-noise run and stand as the representative baseline.
 
 | Benchmark | Root N | Median Time | 95% CI |
 |---|---|---|---|
@@ -715,11 +692,11 @@ algorithm itself.
 
 ## Interactive Demo
 
-An interactive, browser-based visualization of the security proof —
-covering the Forest Game (Game⁰ vs. Game¹), adaptive attacker strategies,
+An interactive, browser-based visualization of the security proof is
+available in [`demo/mrs-auth-security-game.html`](demo/mrs-auth-security-game.html).
+It covers the Forest Game (Game⁰ vs. Game¹), adaptive attacker strategies,
 per-field distribution histograms, a rolling accuracy timeline, and a
-Shamir Secret Sharing walkthrough — is available in
-[`demo/mrs-auth-security-game.html`](demo/mrs-auth-security-game.html).
+Shamir Secret Sharing walkthrough.
 
 No build step, server, or external dependency is required; open the file
 directly in any modern browser (Chrome, Firefox, Safari, Edge).
@@ -747,9 +724,9 @@ distinguishing an authentic witness from an alibi in the transformed
 space, consistent with the "A₀ Bias" strategy already tested empirically
 in the [interactive demo](#interactive-demo).
 
-- [`90-366-2520-transformation.md`](docs/research-notes/90-366-2520-transformation.md) — the mathematical background and the formal findings
-- [`sampler-90-366.md`](docs/research-notes/sampler-90-366.md) — the draft sampler implementing the transformation
-- [`witness-90-366.md`](docs/research-notes/witness-90-366.md) — the draft authentication layer, including a related time-windowed witness scheme
+- [`90-366-2520-transformation.md`](docs/research-notes/90-366-2520-transformation.md): the mathematical background and the formal findings
+- [`sampler-90-366.md`](docs/research-notes/sampler-90-366.md): the draft sampler implementing the transformation
+- [`witness-90-366.md`](docs/research-notes/witness-90-366.md): the draft authentication layer, including a related time-windowed witness scheme
 
 ---
 
@@ -771,11 +748,11 @@ If you use MRS-AUTH in academic work, please cite:
 
 ## Disclaimer
 
-> **Research Prototype — Not for Production Use.**
-> MRS-AUTH is an active research-phase cryptographic framework. It has not undergone independent third-party security audit, formal code review, or red-team penetration testing. Do not deploy in production environments without further independent security review.
+> **Research Prototype.**
+> MRS-AUTH is an active research-phase cryptographic framework, built on machine-checked EasyCrypt proofs of its abstract model and a comprehensive test suite for its Rust implementation. It has not undergone independent third-party security audit, formal code review, or red-team penetration testing, and it carries no certification of any kind, NIST or otherwise. Independent review is welcome, and treat production deployment accordingly until that review has happened.
 
 ---
 
 ## License
 
-This project is licensed under the **Apache-2.0** — see LICENSE for details.
+This project is licensed under the **Apache-2.0**: see LICENSE for details.
