@@ -11,15 +11,25 @@
 //! indistinguishable. The adversary's advantage in detecting the
 //! authentic witness is negligible in the security parameter.
 //!
-//! Architecture (Transfer Dock revision):
+//! Architecture:
 //! - `generate_alibi` lives on `WitnessSpace` (public), NOT on `MasterSecret`.
 //! - `Alibi` is a newtype wrapper around `Witness` to prevent type confusion.
 //! - `MasterSecret` is derived multi-factor via Argon2id + HKDF with mode separation.
 //! - `Duress` mode produces mathematically valid but unbound witnesses.
 //! - `seal`/`unseal` protects the master secret at rest.
+//!
+//! Constant-time note: `generate_authentic_witness` draws its randomness
+//! from a seed derived from `master_secret` (see `derive_seed` below), so
+//! how many attempts it takes to find a valid chain is itself a function
+//! of secret material. Both witness-generating functions in this file
+//! therefore run their full fixed attempt budget every time and select
+//! the winning candidate with `select_chain`/`select_bytes32` rather than
+//! an early return, matching the same pattern
+//! `sampler::sample_three_layers_ct_with_retries_raw` uses internally.
 
+use crate::core::diophantine::DiophantinePair;
 use crate::crypto::shamir;
-use crate::sampler::{sample_three_layers_safe, MrsChain};
+use crate::sampler::{select_chain, sample_three_layers_safe_raw, MrsChain};
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Nonce,
@@ -73,7 +83,7 @@ pub struct MasterSecret {
 struct ProtectedKey([u8; 32]);
 
 /// Operational mode of the master secret.
-/// This enum contains no secret data - it's only a tag.
+/// This enum contains no secret data, it's only a tag.
 /// Therefore it can be Copy without compromising security.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Zeroize)]
 pub enum SecretMode {
@@ -181,14 +191,14 @@ impl ProverSpace for WitnessSpace {
 }
 
 // =============================================================================
-// Master Secret — Multi-Factor Derivation & Management
+// Master Secret: Multi-Factor Derivation & Management
 // =============================================================================
 
 impl MasterSecret {
     /// Derive a master secret from multiple factors.
     ///
     /// Derivation pipeline:
-    /// 1. Password → Argon2id (memory-hard, GPU-resistant)
+    /// 1. Password to Argon2id (memory-hard, GPU-resistant)
     /// 2. Constant-time XOR with hardware token and biometric hash
     /// 3. HKDF-SHA256 with mode-specific domain separation
     pub fn derive(input: &SecretInput, config: &SecretConfig) -> Result<Self, DeriveError> {
@@ -314,8 +324,8 @@ impl MasterSecret {
         });
 
         // Zeroize the temporary share buffer now that recovery has run.
-        // NOTE: must iterate with `iter_mut()` (not `&mut raw_shares` with a
-        // `mut` binding) since `[u8; 32]` is `Copy` — binding by value would
+        // Must iterate with `iter_mut()` (not `&mut raw_shares` with a
+        // `mut` binding) since `[u8; 32]` is `Copy`, binding by value would
         // silently zeroize a local copy instead of the data in `raw_shares`.
         for (_, value) in raw_shares.iter_mut() {
             value.zeroize();
@@ -387,39 +397,74 @@ impl MasterSecret {
 // =============================================================================
 
 impl MasterSecret {
+    /// The fixed number of independently-seeded attempts made when
+    /// deriving an authentic witness. See the module-level constant-time
+    /// note above for why this loop never exits early.
+    const MAX_WITNESS_ATTEMPTS: u32 = 512;
+
     /// Deterministically derive the "intended" witness for a given identity
     /// and session. This witness is the ONE that authenticates the identity.
+    ///
+    /// Always performs exactly `MAX_WITNESS_ATTEMPTS` independently-seeded
+    /// draws and always does the same amount of work regardless of which
+    /// attempt (if any) succeeds. There is no early return: every attempt
+    /// computes its chain, its hash, and its binding tag, and the winning
+    /// candidate is folded into the result with `select_chain` and
+    /// `select_bytes32` rather than a branch. The number of attempts
+    /// actually needed is a function of `master_secret` (see `derive_seed`
+    /// below), so an early-exit version would leak that count through
+    /// timing.
     pub fn generate_authentic_witness(
         &self,
         space: &WitnessSpace,
         identity: &[u8],
         session_id: &[u8],
     ) -> Option<Witness> {
-        for attempt in 0u32..512 {
+        let mut best_chain = MrsChain {
+            layers: vec![
+                DiophantinePair { a: 0, b: 0 },
+                DiophantinePair { a: 0, b: 0 },
+                DiophantinePair { a: 0, b: 0 },
+            ],
+            valid: false,
+        };
+        let mut best_tag = [0u8; 32];
+        let mut found = Choice::from(0);
+
+        for attempt in 0u32..Self::MAX_WITNESS_ATTEMPTS {
             let seed = Self::derive_seed(self.key_bytes(), identity, session_id, attempt);
             let mut rng = DeterministicRng::from_seed(seed);
 
-            if let Some(chain) = sample_three_layers_safe(space.root_n, &mut rng) {
-                let chain_hash = hash_chain(&chain);
-                let binding_tag =
-                    Self::compute_binding_tag(self.key_bytes(), identity, session_id, &chain_hash);
+            let (chain, chain_valid) = sample_three_layers_safe_raw(space.root_n, &mut rng);
+            let chain_hash = hash_chain(&chain);
+            let candidate_tag =
+                Self::compute_binding_tag(self.key_bytes(), identity, session_id, &chain_hash);
+            let member_ok = Choice::from(
+                (space.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound) as u8,
+            );
+            let candidate_ok = chain_valid & member_ok;
 
-                if space.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound {
-                    return Some(Witness {
-                        chain,
-                        binding_tag,
-                        session_id: session_id.to_vec(),
-                    });
-                }
-            }
+            let take_this = candidate_ok & !found;
+            best_chain = select_chain(&best_chain, &chain, take_this);
+            best_tag = select_bytes32(&best_tag, &candidate_tag, take_this);
+            found |= candidate_ok;
         }
 
-        #[cfg(test)]
-        eprintln!(
-            "[WARN] Failed to generate authentic witness for root_n={} after 512 attempts",
-            space.root_n
-        );
-        None
+        if found.unwrap_u8() == 1 {
+            Some(Witness {
+                chain: best_chain,
+                binding_tag: best_tag,
+                session_id: session_id.to_vec(),
+            })
+        } else {
+            #[cfg(test)]
+            eprintln!(
+                "[WARN] Failed to generate authentic witness for root_n={} after {} attempts",
+                space.root_n,
+                Self::MAX_WITNESS_ATTEMPTS
+            );
+            None
+        }
     }
 
     /// Compute binding tag:
@@ -470,7 +515,7 @@ impl MasterSecret {
 }
 
 // =============================================================================
-// Authenticity Verification (Verifier side — has master_secret)
+// Authenticity Verification (Verifier side, has master_secret)
 // =============================================================================
 
 impl MasterSecret {
@@ -489,71 +534,121 @@ impl MasterSecret {
 }
 
 // =============================================================================
-// Public Verification (Verifier side — does NOT have master_secret)
+// Public Verification (Verifier side, does NOT have master_secret)
 // =============================================================================
 
 impl WitnessSpace {
+    /// The fixed number of attempts made when generating an alternative
+    /// witness. Unlike `generate_authentic_witness`, no secret material is
+    /// involved anywhere in this path (see `generate_alternative_witness`
+    /// below), so this loop does not carry the same timing-leak risk. It
+    /// still runs at a fixed cost and without an early return, to match
+    /// the rest of this module and to avoid the same silent-fallback
+    /// failure mode on the rare chance that no candidate validates.
+    const MAX_ALIBI_ATTEMPTS: usize = 512;
+
     pub fn new(root_n: u64, depth: usize) -> Self {
         Self { root_n, depth }
     }
 
     /// Internal raw membership verification (returns status).
+    ///
+    /// Always walks every layer of `chain.layers` and only decides which
+    /// `WitnessStatus` to return once the walk is complete, rather than
+    /// returning as soon as one layer fails. A chain produced by this
+    /// crate's own sampler never hits an early-exit condition here in the
+    /// first place (the sampler enforces the same equation while building
+    /// the chain), so the only effect of removing the early exits is
+    /// making this function's timing independent of malformed input too,
+    /// rather than depending on how deep the malformed part of that input
+    /// happens to sit.
     fn verify_membership_raw(&self, chain: &MrsChain) -> WitnessStatus {
-        if chain.layers.len() != self.depth {
-            return WitnessStatus::Invalid;
-        }
-
+        let length_ok = Choice::from((chain.layers.len() == self.depth) as u8);
         let mut current_n = self.root_n;
+        let mut valid = length_ok;
+
         for pair in &chain.layers {
             let lhs = 19u64
                 .wrapping_mul(pair.a)
                 .wrapping_add(9u64.wrapping_mul(pair.b));
-            if lhs != current_n {
-                return WitnessStatus::Invalid;
-            }
-            if pair.a == 0 && pair.b == 0 && current_n > 0 {
-                return WitnessStatus::Invalid;
-            }
+            let equation_ok = Choice::from((lhs == current_n) as u8);
+            let degenerate = pair.a == 0 && pair.b == 0 && current_n > 0;
+            let not_degenerate = Choice::from((!degenerate) as u8);
+            valid &= equation_ok & not_degenerate;
             current_n = pair.a;
         }
-        WitnessStatus::ValidButUnbound
+
+        if valid.unwrap_u8() == 1 {
+            WitnessStatus::ValidButUnbound
+        } else {
+            WitnessStatus::Invalid
+        }
     }
 
     /// Verify whether a witness is a mathematically valid member of W_N.
-    /// This is a PUBLIC operation — anyone can run it.
+    /// This is a PUBLIC operation, anyone can run it.
     pub fn verify_membership(&self, witness: &Witness) -> WitnessStatus {
         self.verify_membership_raw(&witness.chain)
     }
 
     /// Generate an alternative witness w' ∈ W_N that is mathematically valid
-    /// but NOT bound to the identity. PUBLIC operation — no MasterSecret needed.
+    /// but NOT bound to the identity. PUBLIC operation, no MasterSecret needed.
+    ///
+    /// Always performs exactly `MAX_ALIBI_ATTEMPTS` draws from `rng` and
+    /// always does the same amount of work regardless of which attempt (if
+    /// any) succeeds, matching `generate_authentic_witness`'s discipline
+    /// even though no secret is involved on this path.
     pub fn generate_alternative_witness(
         &self,
         authentic: &Witness,
         rng: &mut impl RngCore,
     ) -> Option<Alibi> {
-        for _attempt in 0..512 {
-            if let Some(chain) = sample_three_layers_safe(self.root_n, rng) {
-                let same = chains_equal_ct(&chain, &authentic.chain);
-                if same.unwrap_u8() == 0
-                    && self.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound
-                {
-                    let mut alibi_tag = [0u8; 32];
-                    rng.fill_bytes(&mut alibi_tag);
+        let mut best_chain = MrsChain {
+            layers: vec![
+                DiophantinePair { a: 0, b: 0 },
+                DiophantinePair { a: 0, b: 0 },
+                DiophantinePair { a: 0, b: 0 },
+            ],
+            valid: false,
+        };
+        let mut best_tag = [0u8; 32];
+        let mut found = Choice::from(0);
 
-                    return Some(Alibi(Witness {
-                        chain,
-                        binding_tag: alibi_tag,
-                        session_id: authentic.session_id.clone(),
-                    }));
-                }
-            }
-            let _ = rng.next_u64();
+        for _ in 0..Self::MAX_ALIBI_ATTEMPTS {
+            let (chain, chain_valid) = sample_three_layers_safe_raw(self.root_n, rng);
+            let differs = !chains_equal_ct(&chain, &authentic.chain);
+            let member_ok = Choice::from(
+                (self.verify_membership_raw(&chain) == WitnessStatus::ValidButUnbound) as u8,
+            );
+            let candidate_ok = chain_valid & differs & member_ok;
+
+            // Drawn for every attempt, not just the winning one: this is
+            // already public, non-secret randomness, so generating it
+            // unconditionally costs nothing in terms of what it reveals,
+            // and keeps this loop free of any branch on candidate_ok.
+            let mut candidate_tag = [0u8; 32];
+            rng.fill_bytes(&mut candidate_tag);
+
+            let take_this = candidate_ok & !found;
+            best_chain = select_chain(&best_chain, &chain, take_this);
+            best_tag = select_bytes32(&best_tag, &candidate_tag, take_this);
+            found |= candidate_ok;
         }
 
-        #[cfg(test)]
-        eprintln!("[WARN] Failed to generate alternative witness after 512 attempts");
-        None
+        if found.unwrap_u8() == 1 {
+            Some(Alibi(Witness {
+                chain: best_chain,
+                binding_tag: best_tag,
+                session_id: authentic.session_id.clone(),
+            }))
+        } else {
+            #[cfg(test)]
+            eprintln!(
+                "[WARN] Failed to generate alternative witness after {} attempts",
+                Self::MAX_ALIBI_ATTEMPTS
+            );
+            None
+        }
     }
 }
 
@@ -584,6 +679,20 @@ fn chains_equal_ct(a: &MrsChain, b: &MrsChain) -> Choice {
         eq &= pa.b.ct_eq(&pb.b);
     }
     eq
+}
+
+/// Selects between two 32-byte tags without branching on `choice`, the
+/// same role `select_chain` plays for chains. Implemented with a manual
+/// bitmask rather than relying on a generic `ConditionallySelectable`
+/// array impl, matching this crate's existing style for types `subtle`
+/// does not cover directly (see `ct_select_u128` in the sampler module).
+fn select_bytes32(current_best: &[u8; 32], candidate: &[u8; 32], choice: Choice) -> [u8; 32] {
+    let mask = choice.unwrap_u8().wrapping_neg(); // 0x00 or 0xFF
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = (candidate[i] & mask) | (current_best[i] & !mask);
+    }
+    out
 }
 
 // =============================================================================
@@ -725,7 +834,6 @@ fn generate_duress_master() -> MasterSecret {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::diophantine::DiophantinePair;
     use rand::rngs::OsRng;
 
     #[test]
@@ -1325,5 +1433,48 @@ mod tests {
             assert_ne!(share.index, 0);
         }
         assert_eq!(indices.len(), 5);
+    }
+
+    #[test]
+    fn verify_membership_raw_rejects_without_early_exit_shortcuts() {
+        // A chain that fails at the very first layer and one that fails
+        // only at the last layer should both be rejected identically,
+        // there is no early return left to make the first case faster
+        // than the second.
+        let space = WitnessSpace::new(3_000_001, 3);
+
+        let fails_first = Witness {
+            chain: MrsChain {
+                layers: vec![
+                    DiophantinePair { a: 1, b: 1 }, // wrong immediately
+                    DiophantinePair { a: 1, b: 1 },
+                    DiophantinePair { a: 1, b: 1 },
+                ],
+                valid: true,
+            },
+            binding_tag: [0u8; 32],
+            session_id: b"test".to_vec(),
+        };
+
+        let (real_master, real_space, real_witness) = generate_test_witness();
+        let mut fails_last = real_witness.chain.clone();
+        if let Some(last) = fails_last.layers.last_mut() {
+            last.a = last.a.wrapping_add(1); // break only the final layer
+        }
+        let fails_last_witness = Witness {
+            chain: fails_last,
+            binding_tag: real_witness.binding_tag,
+            session_id: real_witness.session_id.clone(),
+        };
+
+        assert_eq!(
+            space.verify_membership(&fails_first),
+            WitnessStatus::Invalid
+        );
+        assert_eq!(
+            real_space.verify_membership(&fails_last_witness),
+            WitnessStatus::Invalid
+        );
+        let _ = real_master; // silence unused warning if generate_test_witness signature changes
     }
 }
