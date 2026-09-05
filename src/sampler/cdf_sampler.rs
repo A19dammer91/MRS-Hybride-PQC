@@ -2,22 +2,31 @@
 // for the MRS(19,9) Diophantine witness space.
 //
 //! CONSTANT-TIME IMPLEMENTATION: all operations on secret-dependent data
-//! (chain contents, layer parameters, sampled indices) are constant-time.
-//! Branching on the *loop index* ('layer') is fine — it is public/structural,
-//! not derived from any secret — but nothing derived from 'root_n',
-//! 'master_secret', or sampled randomness is ever used in an 'if'.
+//! (chain contents, layer parameters, sampled indices, and how many
+//! attempts a retry loop needed) are constant-time.
+//! Branching on the *loop index* ('layer' or the retry counter) is fine,
+//! it is public/structural, not derived from any secret, but nothing
+//! derived from 'root_n', 'master_secret', or sampled randomness is ever
+//! used to decide how much work runs or which code path executes.
 //!
 //! 'subtle' gives us 'ConstantTimeEq', 'ConstantTimeGreater',
 //! 'ConstantTimeLess', and 'ConditionallySelectable' for the built-in
-//! integer types up to 'u64'/'i64' — but NOT 'ct_le'/'ct_ge' (its dual
+//! integer types up to 'u64'/'i64', but NOT 'ct_le'/'ct_ge' (its dual
 //! comparisons), and NOT anything at all for 'u128'/'i128'. Both gaps are
 //! filled locally below instead of being called as if they existed.
 //!
 //! # Design
-//! - Layer 1 & 2: weighted sampling using floor-sum prefix sums
-//! - Layer 3: uniform sampling (weight = 1 for all candidates)
+//! - Layer 1 & 2: weighted sampling using floor-sum prefix sums.
+//! - Layer 3: uniform sampling (weight = 1 for all candidates).
 //! - All per-layer work is O(log n) but runs in a fixed number of
 //!   iterations regardless of input, so it takes constant time.
+//! - A single draw can fail to produce a valid chain for a `root_n` that
+//!   does admit one, since layer parameters are drawn from a public but
+//!   sparse candidate space. `sample_three_layers_ct_with_retries` retries
+//!   a fixed number of times to make that failure rate negligible, and
+//!   does so without an early return: see that function's doc comment for
+//!   why an early-exit retry loop would undo the constant-time guarantee
+//!   built up here.
 
 use crate::core::diophantine::{digital_root, validate_triangle_condition, DiophantinePair};
 use rand::RngCore;
@@ -90,7 +99,7 @@ fn ct_ge_u128(a: u128, b: u128) -> Choice {
 }
 
 /// `u128` has no `ConditionallySelectable` impl in `subtle` (and we can't
-/// add one ourselves — both the trait and the type are foreign). This is
+/// add one ourselves, both the trait and the type are foreign). This is
 /// the freestanding equivalent: returns `a` if `choice` is 0, `b` if 1.
 #[inline]
 fn ct_select_u128(a: u128, b: u128, choice: Choice) -> u128 {
@@ -108,10 +117,16 @@ fn ct_eq_u128(a: u128, b: u128) -> Choice {
 // ============================================================================
 
 // `digital_root` and `validate_triangle_condition` live in
-// `core::diophantine` — they are not redefined here. Two implementations
+// `core::diophantine`, they are not redefined here. Two implementations
 // of the same formula drifting apart is exactly the kind of bug this
 // crate can't afford, so this module only ever adds NEW operations on
-// top of the shared ones.
+// top of the shared ones. The same principle is why the final assembled
+// chain below is not re-checked against the triangle condition a second
+// time: the check already runs once, per layer, against the single
+// shared implementation while the chain is built. A second call site
+// checking the same formula a second time does not add independent
+// verification power, it only adds a second place for an argument-order
+// mistake to live.
 
 /// Counts valid triangle candidates using the closed form (constant-time).
 /// Returns 0 if no valid candidates exist.
@@ -144,16 +159,24 @@ pub fn check_ahead_valid_closed_form(a_value: u64) -> Choice {
 /// Generates a uniform random integer in [0, bound) in constant time.
 /// Uses a fixed number of iterations to avoid timing leaks.
 ///
-/// 'bound' may legitimately be 0 here — an earlier layer's parameters were
-/// invalid and overall 'valid' will end up false regardless of what this
-/// function returns. But '% 0' is a hard panic in Rust that can't be
-/// masked after the fact (unlike almost everything else in this file), so
-/// 'bound' is floored to 1 via constant-time select *before* any division
-/// happens. 'debug_assert' alone does NOT prevent this: it's compiled out
-/// entirely in release builds, and even in debug builds it only changes
-/// which panic message you get.
+/// Returns the drawn value together with a `Choice` that is 1 only if one
+/// of the fixed iterations actually produced an in-range draw. When none
+/// do (astronomically unlikely for a CSPRNG over 8 independent draws, but
+/// not impossible), the returned value is 0 and the `Choice` is 0.
+/// Callers MUST fold that `Choice` into their own validity tracking
+/// rather than trusting the returned value on its own: a plain 0 is
+/// otherwise indistinguishable from a genuine draw of 0, and treating it
+/// as genuine would silently produce a non-random, predictable witness
+/// component instead of reporting that this attempt failed.
+///
+/// 'bound' may legitimately be 0 here (an earlier layer's parameters were
+/// invalid). '% 0' is a hard panic in Rust that can't be masked after the
+/// fact, so 'bound' is floored to 1 via constant-time select before any
+/// division happens; callers already track the bound == 0 case separately
+/// through their own validity flags, so the `Choice` returned here does
+/// not need to special-case it.
 #[inline]
-fn uniform_below_ct(bound: u64, rng: &mut impl RngCore) -> u64 {
+fn uniform_below_ct(bound: u64, rng: &mut impl RngCore) -> (u64, Choice) {
     let safe_bound = u64::conditional_select(&bound, &1, bound.ct_eq(&0));
     let limit = u64::MAX - (u64::MAX % safe_bound);
     let mut result = 0u64;
@@ -166,14 +189,15 @@ fn uniform_below_ct(bound: u64, rng: &mut impl RngCore) -> u64 {
         result = u64::conditional_select(&result, &(r % safe_bound), accept);
         found |= accept;
     }
-    result
+    (result, found)
 }
 
-/// Generates a uniform random integer in [0, bound) for 'u128' in constant time.
-// See 'uniform_below_ct' above for why 'bound == 0' is handled rather than
-// asserted against.
+/// Generates a uniform random integer in [0, bound) for 'u128' in constant
+/// time. See `uniform_below_ct` above for why `bound == 0` is handled
+/// rather than asserted against, and why the returned `Choice` must be
+/// checked by the caller rather than trusted implicitly.
 #[inline]
-fn uniform_below_u128_ct(bound: u128, rng: &mut impl RngCore) -> u128 {
+fn uniform_below_u128_ct(bound: u128, rng: &mut impl RngCore) -> (u128, Choice) {
     let safe_bound = ct_select_u128(bound, 1, ct_eq_u128(bound, 0));
     let limit = u128::MAX - (u128::MAX % safe_bound);
     let mut result = 0u128;
@@ -188,7 +212,7 @@ fn uniform_below_u128_ct(bound: u128, rng: &mut impl RngCore) -> u128 {
         result = ct_select_u128(result, r % safe_bound, accept);
         found |= accept;
     }
-    result
+    (result, found)
 }
 
 // =============================================================
@@ -197,9 +221,9 @@ fn uniform_below_u128_ct(bound: u128, rng: &mut impl RngCore) -> u128 {
 
 /// Computes sum_{0 <= i < n} floor((a*i + b)/m) in constant time.
 /// Fixed 64 iterations; once the algorithm would logically terminate,
-/// ALL state (not just 'n') is frozen so later iterations are pure no-ops —
+/// ALL state (not just 'n') is frozen so later iterations are pure no-ops,
 /// this also guarantees 'm' never decays to 0, which would otherwise make
-/// a later division panic. 'm' is also floored to 1 on entry (via constant-
+/// a later division panic. 'm' is also floored to 1 on entry (via constant
 /// time select, not 'max()', which is a codegen detail rather than a
 /// language guarantee) in case an invalid upstream layer ever passes 0.
 fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
@@ -231,7 +255,7 @@ fn floor_sum_ct(n: u64, m: u64, a: u64, b: u64) -> u128 {
         let new_n = y_max / m;
         let new_b = y_max % m;
 
-        // Swap m and a only while genuinely still running — not even on
+        // Swap m and a only while genuinely still running, not even on
         // the iteration that terminates, matching the original recursive
         // algorithm, which does not recurse/swap once it terminates.
         let advance = !done & !terminates_now;
@@ -308,11 +332,11 @@ impl LayerParams {
 /// - `e_prime`: shifted constant >= 171
 /// - `valid`: whether the parameters are valid
 ///
-/// FIX: `(a_val - 19*dr_a)` silently wraps in release mode when
-/// `a_at(0) < 19*dr_a`. We skip `t_skip = ceil((19*dr_a - a_at(0))/81)`
-/// steps first; `dr(a_at(t))` is constant across the layer since
+/// `(a_val - 19*dr_a)` would silently wrap in release mode when
+/// `a_at(0) < 19*dr_a`. `t_skip = ceil((19*dr_a - a_at(0))/81)` steps are
+/// taken first; `dr(a_at(t))` is constant across the layer since
 /// `a_at(t)` grows by 81 per step, so this guarantees `a_at(t_skip)`
-/// is large enough for safe subtraction.
+/// is large enough for the subtraction below to stay in range.
 fn weight_params_ct(params: &LayerParams) -> (u64, u64, Choice) {
     let a0_val = params.a_at_ct(0);
     let dr_a = digital_root(a0_val);
@@ -322,30 +346,24 @@ fn weight_params_ct(params: &LayerParams) -> (u64, u64, Choice) {
     let t_skip = (diff + 80) / 81;
     let a_val = params.a_at_ct(t_skip);
 
-    // --- FIX BUG 1: Safe division and b0_val safeguarding ---
-    // Check if a_val >= threshold in constant-time
+    // Whether a_val >= threshold, computed in constant time.
     let a_val_ge_threshold = a_val.ct_ge(&threshold);
 
-    // Calculate a safe difference that won't wrap to u64::MAX
+    // A safe difference that cannot wrap to u64::MAX, and a division that
+    // only ever runs on that safe difference.
     let safe_diff = u64::conditional_select(&0, &a_val.wrapping_sub(threshold), a_val_ge_threshold);
-
-    // Perform the division safely; if invalid, this becomes 0 / 9 = 0
     let b0_val_raw = safe_diff / 9;
-
-    // Force b0_val to 0 if a_val was invalid to prevent massive values
     let b0_val = u64::conditional_select(&0, &b0_val_raw, a_val_ge_threshold);
 
     let target = digital_root(2 * dr_a);
     let c3 = b0_val.wrapping_add(9).wrapping_sub(target) % 9;
 
-    // --- FIX BUG 2: Correct processing of e_prime_raw ---
     let b0_ge = b0_val.ct_ge(&(19 * c3 + 171));
     let need = 171u64.saturating_add(19 * c3).saturating_sub(b0_val);
     let t_filter_raw = (need + 8) / 9;
     let t_filter_eff = u64::conditional_select(&t_filter_raw, &0, b0_ge);
     let t_filter = t_skip.wrapping_add(t_filter_eff);
 
-    // This chain will now succeed because b0_val contains safe, valid parameters
     let e_prime_raw = 9u64
         .checked_mul(t_filter)
         .and_then(|v| v.checked_add(b0_val))
@@ -355,7 +373,6 @@ fn weight_params_ct(params: &LayerParams) -> (u64, u64, Choice) {
     let e_prime_valid = e_prime_raw.ct_ge(&171);
     let t_filter_ok = t_filter.ct_le(&params.t_max);
 
-    // Genuine constraints now correctly dictate layer validity
     let valid = params.valid & e_prime_valid & t_filter_ok & a_val_ge_threshold;
 
     (t_filter, e_prime_raw, valid)
@@ -383,20 +400,17 @@ where
     F: FnMut(u64) -> Choice,
 {
     for _ in 0..64 {
-        // FIX: this loop always runs the full 64 iterations for constant-time
-        // reasons, even after lo/hi have converged. Once converged, `lo` can
-        // legitimately end up past `hi` (via `new_lo = mid + 1`), at which
-        // point `hi.wrapping_sub(lo)` intentionally wraps to a huge value on
-        // the following "phantom" iterations. Adding that back to `lo` with
-        // plain `+` then overflows and panics in debug builds (release mode
-        // masked this by wrapping silently, which is why it never showed up
-        // until an overflow-checked test build hit it). `wrapping_add` here
-        // keeps the exact same computed value in release mode while making
-        // debug builds behave identically instead of panicking.
+        // This loop always runs the full 64 iterations for constant-time
+        // reasons, even after lo/hi have converged. Once converged, `lo`
+        // can legitimately end up past `hi` (via `new_lo = mid + 1`), at
+        // which point `hi.wrapping_sub(lo)` intentionally wraps to a huge
+        // value on the following "phantom" iterations. `wrapping_add` here
+        // keeps that arithmetic well-defined instead of panicking under
+        // overflow checks.
         let mid = lo.wrapping_add(hi.wrapping_sub(lo) / 2);
         let pred_mid = pred(mid);
 
-        // If pred(mid) is true (prefix <= r), search the right half;
+        // If pred(mid) is true (prefix <= r), search the right half,
         // otherwise search the left half.
         let new_lo = mid.wrapping_add(1);
         lo = u64::conditional_select(&lo, &new_lo, pred_mid);
@@ -404,124 +418,66 @@ where
     }
     lo
 }
+
 // ============================================================================
-// Chain Verification
+// Chain Selection and Structural Verification
 // ============================================================================
 
-/// Verifies that a chain meets all validity criteria
-fn verify_chain_validity(chain: &MrsChain, root_n: u64) -> bool {
-    if !chain.valid || chain.layers.len() != 3 {
-        return false;
-    }
-
-    // Check descent property
-    if root_n <= chain.layers[0].a {
-        return false;
-    }
-    if chain.layers[0].a <= chain.layers[1].a {
-        return false;
-    }
-    if chain.layers[1].a <= chain.layers[2].a {
-        return false;
-    }
-
-    // Verify triangle condition for each layer.
-    // FIX: `validate_triangle_condition(b: u64, x: u64)` expects the B-value
-    // first and the anchor value second (dr(B) == dr(2*dr(X))). This used to
-    // be called as `validate_triangle_condition(pair.a, pair.b)` — arguments
-    // swapped — combined with `!x.unwrap_u8() == 1`, which due to Rust's
-    // operator precedence parses as `(!x.unwrap_u8()) == 1` and is therefore
-    // *always* false regardless of the result, making this check a
-    // permanent no-op. Both are corrected here: arguments in the right
-    // order, and the negation applied to the boolean comparison, not to the
-    // raw u8 before it.
-    for pair in &chain.layers {
-        if !(validate_triangle_condition(pair.b, pair.a).unwrap_u8() == 1) {
-            return false;
-        }
-    }
-
-    true
+/// Selects between two chains without branching on `choice`. This is what
+/// lets the retry loop below pick a winning chain from several attempts
+/// without an early return: every attempt runs, and the first one that
+/// validates is folded into the result through this function instead of
+/// through a branch. Exported (not just used internally) so that callers
+/// like `security::witness`, which need the exact same pattern for their
+/// own outer retry loops, reuse this instead of re-deriving it.
+pub fn select_chain(current_best: &MrsChain, candidate: &MrsChain, choice: Choice) -> MrsChain {
+    let layers = current_best
+        .layers
+        .iter()
+        .zip(candidate.layers.iter())
+        .map(|(cur, cand)| DiophantinePair {
+            a: u64::conditional_select(&cur.a, &cand.a, choice),
+            b: u64::conditional_select(&cur.b, &cand.b, choice),
+        })
+        .collect();
+    MrsChain { layers, valid: true }
 }
 
-// ============================================================================
-// PUBLIC API - Exported Functions
-// ============================================================================
-
-/// Samples a 3-layer witness chain in constant time with retries.
-///
-/// # Parameters
-/// - `root_n`: the root value to sample from
-/// - `rng`: cryptographically secure RNG
-/// - `max_attempts`: maximum number of sampling attempts
-///
-/// # Returns
-/// - `Some(MrsChain)` if a valid chain is found
-/// - `None` if no valid chain exists after all attempts
-pub fn sample_three_layers_ct_with_retries(
-    root_n: u64,
-    rng: &mut impl RngCore,
-    max_attempts: usize,
-) -> Option<MrsChain> {
-    // First, check if ANY chain exists at all (quick feasibility check)
-    let params = LayerParams::new_ct(root_n);
-    if params.valid.unwrap_u8() == 0 {
-        // No valid chains exist for this root_n
-        return None;
+/// Checks the descent property: each layer's `a` must be strictly smaller
+/// than the value it was derived from. Unlike the triangle condition
+/// (checked once, per layer, against the single shared implementation
+/// while the chain is built), this property is not otherwise verified
+/// anywhere else, so it is checked once here on the assembled chain.
+fn verify_descent(chain: &MrsChain, root_n: u64) -> bool {
+    if chain.layers.len() != 3 {
+        return false;
     }
-
-    // Try multiple times with different randomness
-    for _attempt in 0..max_attempts {
-        if let Some(chain) = sample_three_layers_ct(root_n, rng) {
-            // Verify the chain is actually valid before returning
-            if verify_chain_validity(&chain, root_n) {
-                return Some(chain);
-            }
-        }
-
-        #[cfg(test)]
-        if _attempt == max_attempts - 1 {
-            eprintln!(
-                "[DEBUG] Failed to sample chain for root_n={} after {} attempts",
-                root_n, max_attempts
-            );
-        }
-    }
-
-    None
-}
-
-/// Wrapper that uses default retry count (10 attempts)
-/// This is the PRIMARY public API for witness generation.
-pub fn sample_three_layers_safe(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain> {
-    sample_three_layers_ct_with_retries(root_n, rng, 10)
-}
-
-/// Original sampler - kept for backwards compatibility
-pub fn sample_three_layers(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain> {
-    sample_three_layers_ct(root_n, rng)
+    root_n > chain.layers[0].a
+        && chain.layers[0].a > chain.layers[1].a
+        && chain.layers[1].a > chain.layers[2].a
 }
 
 // ============================================================================
 // Core Sampler Implementation
 // ============================================================================
 
-/// Samples a 3-layer witness chain in constant time.
+/// Core sampling logic for a single attempt. Always performs the same
+/// fixed amount of work for a given `root_n` regardless of the randomness
+/// drawn, and always returns a chain together with a `Choice` saying
+/// whether that chain is a genuine valid witness.
 ///
-/// # Properties
-/// - No branch depends on secret data (only on the public loop index).
-/// - O(log n) work per layer via floor-sum + binary search, each bounded
-///   by a fixed iteration count.
-/// - Cryptographically secure random sampling.
-/// - Returns `None` if no valid chain exists for the given `root_n` — but
-///   note `root_n` itself is never branched on to decide this; the `None`
-///   falls out of `overall_valid` staying false through every layer.
+/// There is deliberately no `Option` at this level. Wrapping the result
+/// in `Option` here would let a caller branch on `is_some()` to decide
+/// whether to do more work, which is exactly the kind of secret-dependent
+/// branch this function exists to avoid; `Option` only appears at the
+/// public API boundary below, where returning `None` costs no extra work
+/// compared to returning `Some`.
 ///
 /// # Layers
 /// 1. First layer: weighted sampling based on child candidate count.
 /// 2. Second layer: weighted sampling based on child candidate count.
 /// 3. Third layer: uniform sampling (all candidates have weight 1).
-pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain> {
+fn sample_three_layers_ct_raw(root_n: u64, rng: &mut impl RngCore) -> (MrsChain, Choice) {
     const DEPTH: usize = 3;
     let mut chain = Vec::with_capacity(DEPTH);
     let mut current_n = root_n;
@@ -536,17 +492,12 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
         overall_valid &= params.valid;
 
         let (t_filter, e_prime, weight_valid) = weight_params_ct(&params);
-        // FIX: weight_params_ct derives t_filter/e_prime for the *weighted*
+        // `weight_params_ct` derives t_filter/e_prime for the *weighted*
         // CDF sampling used by non-final layers. The final layer samples
         // uniformly over [0, t_max] instead and never uses t_filter/e_prime
-        // at all — so weight_valid being false here (which happens
-        // routinely once the final layer's t_max is small, e.g. t_max=1,
-        // since values shrink sharply each layer) must not veto an
-        // otherwise-valid uniform pick. Previously this was ANDed into
-        // overall_valid unconditionally, which silently discarded almost
-        // every chain whose *last* layer landed on a small n — the common
-        // case, not a rare one, which is why success dropped to ~0% for
-        // smaller root_n values.
+        // at all, so weight_valid being false here (which happens
+        // routinely once the final layer's t_max is small) must not veto
+        // an otherwise-valid uniform pick.
         if !is_last_layer {
             overall_valid &= weight_valid;
         }
@@ -560,11 +511,13 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
         let total_valid = ct_gt_u128(total_weight, 0);
         overall_valid &= total_valid;
 
-        let r = if is_last_layer {
-            uniform_below_ct(params.t_max + 1, rng) as u128
+        let (r, r_ok) = if is_last_layer {
+            let (v, ok) = uniform_below_ct(params.t_max + 1, rng);
+            (v as u128, ok)
         } else {
             uniform_below_u128_ct(total_weight, rng)
         };
+        overall_valid &= r_ok;
 
         let t = if is_last_layer {
             r as u64
@@ -582,14 +535,9 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
         // `weight_params_ct`'s closed-form t_filter only guarantees a
         // count >= 1 (a representation exists at all), not the stricter
         // count >= 2 that non-final layers actually require to remain
-        // valid (check_ahead_valid_closed_form). A candidate with
-        // exactly count == 1 can slip through the weighted selection
-        // with a nonzero weight even though it should have been
-        // excluded — so verify it directly here rather than trusting
-        // the closed-form threshold, and fold the result into
-        // overall_valid so such a chain is discarded (None) instead of
-        // being returned looking valid. `check_ahead_valid_closed_form`
-        // is itself Choice-based, so this stays constant-time.
+        // valid. A candidate with exactly count == 1 can slip through the
+        // weighted selection with a nonzero weight even though it should
+        // have been excluded, so it is checked directly here.
         let layer_ok = if is_last_layer {
             Choice::from(1)
         } else {
@@ -597,13 +545,9 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
         };
         overall_valid &= layer_ok;
 
-        // Also verify triangle condition directly before pushing.
-        // FIX: `validate_triangle_condition(b: u64, x: u64)` expects
-        // (B-value, anchor-value) — i.e. dr(B) == dr(2*dr(X)). This was
-        // previously called as `validate_triangle_condition(a, b)`,
-        // swapping the arguments, which made the check fail for
-        // essentially every candidate and caused chain sampling to fail
-        // systematically regardless of root_n.
+        // The one and only place the triangle condition is checked. See
+        // the module-level note above for why it is not re-checked again
+        // on the assembled chain.
         let triangle_valid = validate_triangle_condition(b, a);
         overall_valid &= triangle_valid;
 
@@ -617,14 +561,109 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
         current_n = u64::conditional_select(&current_n, &a, should_push);
     }
 
-    if overall_valid.unwrap_u8() == 1 {
-        Some(MrsChain {
+    (
+        MrsChain {
             layers: chain,
             valid: true,
-        })
+        },
+        overall_valid,
+    )
+}
+
+// ============================================================================
+// PUBLIC API
+// ============================================================================
+
+/// A single constant-time sampling attempt. May return `None` if this
+/// particular draw did not produce a valid chain, `root_n` values that
+/// admit no valid chain at all will always return `None` here regardless
+/// of `rng`. Most callers should use `sample_three_layers_safe` instead,
+/// which retries the fixed number of times ordinary randomness requires.
+pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain> {
+    let (chain, valid) = sample_three_layers_ct_raw(root_n, rng);
+    let ok = valid & Choice::from(verify_descent(&chain, root_n) as u8);
+    if ok.unwrap_u8() == 1 {
+        Some(chain)
     } else {
         None
     }
+}
+
+/// Raw counterpart to `sample_three_layers_ct_with_retries`: always
+/// performs exactly `max_attempts` draws and always returns a chain
+/// together with a `Choice`, never an `Option`. Exists so that callers who
+/// need to do further constant-time work on the result, such as
+/// `security::witness`, which hashes the chain and computes a binding tag
+/// from it, can do that work unconditionally instead of branching on
+/// `Option::is_some()`. That branch would otherwise reintroduce a
+/// secret-correlated difference in how much work runs per attempt, the
+/// exact problem this function exists to avoid.
+///
+/// There is no early return and no quick feasibility check up front:
+/// every one of the `max_attempts` draws runs regardless of root_n, and
+/// whether `root_n` admits any valid chain at all is folded into the
+/// returned `Choice` at the end via `params.valid`, exactly like every
+/// other validity condition in this module.
+pub fn sample_three_layers_ct_with_retries_raw(
+    root_n: u64,
+    rng: &mut impl RngCore,
+    max_attempts: usize,
+) -> (MrsChain, Choice) {
+    let params = LayerParams::new_ct(root_n);
+    let feasible = params.valid;
+
+    let mut best = MrsChain {
+        layers: vec![
+            DiophantinePair { a: 0, b: 0 },
+            DiophantinePair { a: 0, b: 0 },
+            DiophantinePair { a: 0, b: 0 },
+        ],
+        valid: false,
+    };
+    let mut found = Choice::from(0);
+
+    for _ in 0..max_attempts {
+        let (candidate, candidate_valid) = sample_three_layers_ct_raw(root_n, rng);
+        let candidate_ok =
+            candidate_valid & Choice::from(verify_descent(&candidate, root_n) as u8);
+        let take_this = candidate_ok & !found;
+        best = select_chain(&best, &candidate, take_this);
+        found |= candidate_ok;
+    }
+
+    (best, feasible & found)
+}
+
+/// Samples a 3-layer witness chain, retrying internally when a single draw
+/// does not produce a valid chain. Thin `Option`-returning wrapper around
+/// `sample_three_layers_ct_with_retries_raw`: the same fixed amount of work
+/// runs either way, this only decides which enum variant to hand back.
+pub fn sample_three_layers_ct_with_retries(
+    root_n: u64,
+    rng: &mut impl RngCore,
+    max_attempts: usize,
+) -> Option<MrsChain> {
+    let (chain, ok) = sample_three_layers_ct_with_retries_raw(root_n, rng, max_attempts);
+    if ok.unwrap_u8() == 1 {
+        Some(chain)
+    } else {
+        None
+    }
+}
+
+/// Primary public entry point for witness generation. Retries a fixed 10
+/// times; see `sample_three_layers_ct_with_retries_raw` for why that retry
+/// loop itself runs at constant time rather than exiting early on success.
+pub fn sample_three_layers_safe(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain> {
+    sample_three_layers_ct_with_retries(root_n, rng, 10)
+}
+
+/// Raw counterpart to `sample_three_layers_safe`, returning `(MrsChain,
+/// Choice)` instead of `Option<MrsChain>` for the same reason
+/// `sample_three_layers_ct_with_retries_raw` does. This is what
+/// `security::witness` calls from its own outer retry loop.
+pub fn sample_three_layers_safe_raw(root_n: u64, rng: &mut impl RngCore) -> (MrsChain, Choice) {
+    sample_three_layers_ct_with_retries_raw(root_n, rng, 10)
 }
 
 // ============================================================================
@@ -632,7 +671,7 @@ pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<Mrs
 // ============================================================================
 
 /// Counts valid triangle candidates by the triangle condition using
-/// `core::diophantine`'s own (Popoviciu-cardinality-based) generator — a
+/// `core::diophantine`'s own (Popoviciu-cardinality-based) generator, a
 /// genuinely different derivation from `count_triangle_filtered_closed_form`'s
 /// a0/b0/k0/k_max approach, so this actually catches a bug in either one
 /// instead of checking a formula against a restatement of itself.
@@ -733,10 +772,8 @@ mod tests {
         let root_n = 3_000_001;
         let mut rng = OsRng;
 
-        // Use the safe version with retries
         let result = sample_three_layers_safe(root_n, &mut rng);
 
-        // Don't assert that it must succeed - some root_n may not have chains
         if let Some(chain) = result {
             assert!(chain.valid);
             assert_eq!(chain.layers.len(), 3);
@@ -762,8 +799,35 @@ mod tests {
     }
 
     #[test]
+    fn uniform_below_ct_reports_failure_explicitly() {
+        // A degenerate RNG that always returns u64::MAX makes every draw
+        // land outside the acceptance window for any bound that does not
+        // evenly divide u64::MAX + 1, so all 8 iterations reject and the
+        // function must report failure rather than fabricating a 0.
+        struct AlwaysMax;
+        impl RngCore for AlwaysMax {
+            fn next_u32(&mut self) -> u32 {
+                u32::MAX
+            }
+            fn next_u64(&mut self) -> u64 {
+                u64::MAX
+            }
+            fn fill_bytes(&mut self, dest: &mut [u8]) {
+                dest.fill(0xFF);
+            }
+            fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+                self.fill_bytes(dest);
+                Ok(())
+            }
+        }
+
+        let mut rng = AlwaysMax;
+        let (_value, ok) = uniform_below_ct(3, &mut rng);
+        assert_eq!(ok.unwrap_u8(), 0, "expected explicit failure, not a silent 0");
+    }
+
+    #[test]
     fn ct_sampler_produces_valid_chains() {
-        // Test values - some may have chains, some may not
         let test_values = [
             3_000_001u64,
             3_500_007,
@@ -778,7 +842,6 @@ mod tests {
         let mut results = Vec::new();
 
         for &root_n in &test_values {
-            // Try up to 20 attempts per root_n with 5 retries each
             let mut chain_found = false;
 
             for attempt in 0..20 {
@@ -787,15 +850,12 @@ mod tests {
                         chain_found = true;
                         found_any = true;
 
-                        // Verify properties
                         assert_eq!(chain.layers.len(), 3);
                         assert!(root_n > chain.layers[0].a);
                         assert!(chain.layers[0].a > chain.layers[1].a);
                         assert!(chain.layers[1].a > chain.layers[2].a);
 
                         for pair in &chain.layers {
-                            // FIX: validate_triangle_condition(b, x) expects
-                            // the B-value first, the anchor value second.
                             assert!(
                                 validate_triangle_condition(pair.b, pair.a).unwrap_u8() == 1,
                                 "Triangle condition failed for ({}, {})",
@@ -805,10 +865,9 @@ mod tests {
                         }
 
                         results.push((root_n, true));
-                        break; // Success, move to next root_n
+                        break;
                     }
                     None => {
-                        // Continue trying
                         if attempt == 19 {
                             results.push((root_n, false));
                             eprintln!("[WARN] No chain for root_n={} after 20 attempts", root_n);
@@ -822,10 +881,8 @@ mod tests {
             }
         }
 
-        // Report results but don't fail if some values produce no chains
         println!("[INFO] Sampling results: {:?}", results);
 
-        // At least one test value should produce a chain
         assert!(
             found_any,
             "No chains found for any test value - sampler may be broken"
@@ -834,7 +891,6 @@ mod tests {
 
     #[test]
     fn debug_weight_params() {
-        // This test helps debug what's going wrong with weight parameters
         let root_n = 3_000_001;
         let params = LayerParams::new_ct(root_n);
         let (t_filter, e_prime, valid, debug_info) = debug_weight_params_ct(&params);
@@ -855,19 +911,68 @@ mod tests {
         let root_n = 3_000_001;
         let mut rng = OsRng;
 
-        // Test that retries work without panicking
         for _ in 0..10 {
             let result = sample_three_layers_ct_with_retries(root_n, &mut rng, 3);
-            // No unwrap - just check if it works
             if let Some(chain) = result {
-                // Got a chain, verify it
                 assert!(chain.valid);
                 assert_eq!(chain.layers.len(), 3);
                 assert!(root_n > chain.layers[0].a);
             }
         }
 
-        // If we got here, no panics occurred
         println!("[INFO] Retry test passed without panics");
+    }
+
+    #[test]
+    fn retries_always_run_max_attempts_worth_of_draws() {
+        // A counting RNG wrapper to confirm the retry loop consumes the
+        // same number of underlying draws every time, regardless of how
+        // quickly a valid chain is found. Each `sample_three_layers_ct_raw`
+        // attempt draws from `rng` a fixed number of times per layer, so a
+        // constant-time retry loop must always advance `rng` by the same
+        // total amount for a given `max_attempts`, independent of when
+        // (or whether) a valid chain first appears among the attempts.
+        struct CountingRng<'a> {
+            inner: &'a mut dyn RngCore,
+            calls: usize,
+        }
+        impl<'a> RngCore for CountingRng<'a> {
+            fn next_u32(&mut self) -> u32 {
+                self.calls += 1;
+                self.inner.next_u32()
+            }
+            fn next_u64(&mut self) -> u64 {
+                self.calls += 1;
+                self.inner.next_u64()
+            }
+            fn fill_bytes(&mut self, dest: &mut [u8]) {
+                self.inner.fill_bytes(dest)
+            }
+            fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+                self.inner.try_fill_bytes(dest)
+            }
+        }
+
+        let root_n = 3_000_001;
+        let mut base = OsRng;
+
+        let mut counter_a = CountingRng {
+            inner: &mut base,
+            calls: 0,
+        };
+        let _ = sample_three_layers_ct_with_retries(root_n, &mut counter_a, 7);
+        let calls_a = counter_a.calls;
+
+        let mut counter_b = CountingRng {
+            inner: &mut base,
+            calls: 0,
+        };
+        let _ = sample_three_layers_ct_with_retries(root_n, &mut counter_b, 7);
+        let calls_b = counter_b.calls;
+
+        assert_eq!(
+            calls_a, calls_b,
+            "retry loop drew a different number of random values across two independent runs"
+        );
     }
 }
