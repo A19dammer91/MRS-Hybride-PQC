@@ -440,7 +440,10 @@ pub fn select_chain(current_best: &MrsChain, candidate: &MrsChain, choice: Choic
             b: u64::conditional_select(&cur.b, &cand.b, choice),
         })
         .collect();
-    MrsChain { layers, valid: true }
+    MrsChain {
+        layers,
+        valid: true,
+    }
 }
 
 /// Checks the descent property: each layer's `a` must be strictly smaller
@@ -624,8 +627,7 @@ pub fn sample_three_layers_ct_with_retries_raw(
 
     for _ in 0..max_attempts {
         let (candidate, candidate_valid) = sample_three_layers_ct_raw(root_n, rng);
-        let candidate_ok =
-            candidate_valid & Choice::from(verify_descent(&candidate, root_n) as u8);
+        let candidate_ok = candidate_valid & Choice::from(verify_descent(&candidate, root_n) as u8);
         let take_this = candidate_ok & !found;
         best = select_chain(&best, &candidate, take_this);
         found |= candidate_ok;
@@ -823,7 +825,11 @@ mod tests {
 
         let mut rng = AlwaysMax;
         let (_value, ok) = uniform_below_ct(3, &mut rng);
-        assert_eq!(ok.unwrap_u8(), 0, "expected explicit failure, not a silent 0");
+        assert_eq!(
+            ok.unwrap_u8(),
+            0,
+            "expected explicit failure, not a silent 0"
+        );
     }
 
     #[test]
