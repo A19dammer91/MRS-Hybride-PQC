@@ -61,8 +61,8 @@ impl MrsAuthFramework {
 
         let root_n = derive_session_root(session_id);
 
-        let mrs_chain =
-            sample_three_layers_safe(root_n, &mut rng).ok_or(FrameworkError::ChainSamplingFailed)?;
+        let mrs_chain = sample_three_layers_safe(root_n, &mut rng)
+            .ok_or(FrameworkError::ChainSamplingFailed)?;
 
         let hybrid_key = derive_hybrid_key(&shared_secret, &mrs_chain, session_id)
             .map_err(FrameworkError::Crypto)?;
@@ -125,4 +125,4 @@ mod tests {
 
         assert_eq!(plaintext.to_vec(), recovered);
     }
-}
+        }
