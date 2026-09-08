@@ -1,22 +1,3 @@
-//! Temporal Witness Authentication — 90/366/2520 extension
-//!
-//! Builds on `security::witness::MasterSecret` for key derivation and on
-//! `sampler::supergrid` for the underlying chain sampling. Adds a time
-//! dimension: a witness generated here is only valid within the 366-second
-//! window it was created in.
-//!
-//! Kept as a separate module from `security::witness` rather than folding
-//! into it: the types below (`Witness90`, `WitnessSpace90`,
-//! `WitnessStatus90`) share names and shapes with their counterparts there
-//! but are not identical (extra `timestamp`/`transform_level` fields, an
-//! extra `Expired` status), so keeping them apart avoids disturbing
-//! `security::witness`'s existing, already-tested call sites.
-//!
-//! Constant-time note: this module follows the same discipline as
-//! `security::witness` — fixed attempt budgets, no early return, and
-//! selection via `select_supergrid_chain`/`conditional_select` rather than
-//! branching on chain contents or secret-derived randomness.
-
 use crate::sampler::supergrid::{
     select_supergrid_chain, temporal_root_from_timestamp,
     verify_temporal_chain, SupergridChain, SupergridSampler, TransformLevel, MICRO_ANCHOR,
@@ -30,11 +11,6 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 type HmacSha256 = Hmac<Sha256>;
 
-// ============================================================================
-// Data Structures
-// ============================================================================
-
-/// A witness bound to both an identity and a 366-second time window.
 #[derive(Debug, Clone, PartialEq, Zeroize, ZeroizeOnDrop)]
 pub struct Witness90 {
     pub chain: SupergridChain,
@@ -43,17 +19,9 @@ pub struct Witness90 {
     pub timestamp: u64,
 }
 
-/// Newtype wrapper, mirrors `security::witness::Alibi`: distinct type so
-/// the compiler catches accidental use of an alibi where an authentic
-/// witness is expected.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Alibi90(pub Witness90);
 
-/// Public parameters for a temporal witness space. Unlike
-/// `security::witness::WitnessSpace`, `root_n` is derived per-verification
-/// from the witness's own timestamp rather than fixed at construction,
-/// since the whole point of this module is that the root changes every
-/// 366 seconds.
 #[derive(Debug, Clone)]
 pub struct WitnessSpace90 {
     pub depth: usize,
@@ -65,7 +33,6 @@ pub enum WitnessStatus90 {
     Authentic,
     Invalid,
     BindingMismatch,
-    /// Witness presented outside its 366-second window.
     Expired,
 }
 
@@ -80,10 +47,6 @@ impl WitnessSpace90 {
         Self { depth }
     }
 
-    /// Public membership check: is `chain` mathematically valid against
-    /// its own claimed `root_n_scaled`, independent of any binding tag or
-    /// timestamp freshness. Delegates to `verify_temporal_chain`, which
-    /// is already `Choice`-based and depth/homogeneity aware.
     pub fn verify_membership_raw(&self, chain: &SupergridChain, root_n_scaled: u64) -> Choice {
         let depth_ok = Choice::from((chain.layers.len() == self.depth) as u8);
         depth_ok & verify_temporal_chain(chain, root_n_scaled)
@@ -102,23 +65,9 @@ impl WitnessSpace90 {
     }
 }
 
-// ============================================================================
-// Witness Generation (Prover side, has MasterSecret)
-// ============================================================================
-
 impl MasterSecret {
-    /// The fixed number of independently-seeded attempts made when
-    /// deriving a temporal witness. Same discipline and same value as
-    /// `generate_authentic_witness` in `security::witness`.
     const MAX_TEMPORAL_ATTEMPTS: u32 = 512;
 
-    /// Deterministically derives the witness bound to `identity` for the
-    /// 366-second window containing `timestamp`. Always performs exactly
-    /// `MAX_TEMPORAL_ATTEMPTS` independently-seeded draws with no early
-    /// return, matching `generate_authentic_witness`'s constant-time
-    /// discipline: how many attempts are needed is itself a function of
-    /// `master_secret`, so an early-exit version would leak that count
-    /// through timing.
     pub fn generate_temporal_witness(
         &self,
         space: &WitnessSpace90,
@@ -181,10 +130,6 @@ impl MasterSecret {
         }
     }
 
-    /// Checks binding AND freshness. Expiry is checked first (cheap,
-    /// public data only — matches `security::witness`'s existing pattern
-    /// of doing structural checks before the HMAC comparison), then the
-    /// binding tag is compared in constant time via `ct_eq`.
     pub fn verify_temporal_authenticity(
         &self,
         witness: &Witness90,
@@ -252,19 +197,9 @@ impl MasterSecret {
     }
 }
 
-// ============================================================================
-// Alibi Generation (Public, no MasterSecret needed)
-// ============================================================================
-
 impl WitnessSpace90 {
     const MAX_ALIBI_ATTEMPTS: usize = 512;
 
-    /// Generates an alternative witness for the SAME 366-second window as
-    /// `authentic`, so it stays plausible for the same period. No secret
-    /// material is used anywhere on this path (same as
-    /// `security::witness::generate_alternative_witness`), but the fixed
-    /// attempt budget and no-early-return discipline is kept for
-    /// consistency with the rest of this module.
     pub fn generate_alternative_witness(
         &self,
         authentic: &Witness90,
@@ -319,10 +254,6 @@ impl WitnessSpace90 {
     }
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
 pub fn hash_supergrid_chain(chain: &SupergridChain) -> [u8; 32] {
     use sha2::Digest;
     let mut hasher = Sha256::new();
@@ -347,7 +278,6 @@ fn chains_equal_ct(a: &SupergridChain, b: &SupergridChain) -> Choice {
     eq
 }
 
-/// Same manual-bitmask pattern as `security::witness::select_bytes32`.
 fn select_bytes32(current_best: &[u8; 32], candidate: &[u8; 32], choice: Choice) -> [u8; 32] {
     let mask = choice.unwrap_u8().wrapping_neg();
     let mut out = [0u8; 32];
@@ -356,13 +286,6 @@ fn select_bytes32(current_best: &[u8; 32], candidate: &[u8; 32], choice: Choice)
     }
     out
 }
-
-// ============================================================================
-// Deterministic RNG — identical construction to
-// security::witness::DeterministicRng, duplicated locally rather than
-// exported from that module to avoid widening its public surface for a
-// single internal reuse.
-// ============================================================================
 
 struct TemporalRng {
     state: [u8; 32],
@@ -436,10 +359,6 @@ impl RngCore for TemporalRng {
     }
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,8 +381,6 @@ mod tests {
         MasterSecret::derive(&input, &config).expect("derive authentic")
     }
 
-    /// A timestamp whose window is known (from `supergrid.rs`'s own
-    /// tests) to admit a sampleable scaled root.
     fn test_timestamp() -> u64 {
         3_000_001u64 * MICRO_ANCHOR
     }
