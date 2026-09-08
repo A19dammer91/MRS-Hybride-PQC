@@ -122,20 +122,17 @@ impl SupergridSampler {
         }
     }
 
-    // --- NEW: raw temporal chain sampler (for constant-time selection) ---
-
     /// Single attempt to sample a temporal chain.
     /// Returns `(SupergridChain, Choice)` – no `Option`, so callers can
     /// perform constant‑time selection without branching.
     pub fn sample_temporal_chain_raw(
         &self,
         root_n_scaled: u64,
-        _timestamp: u64,  // kept for API symmetry; not used directly
+        _timestamp: u64,
         rng: &mut impl RngCore,
     ) -> (SupergridChain, Choice) {
         let (chain, valid) = self.sample_three_layers_scaled_raw(root_n_scaled, rng);
 
-        // Determine transform level based on supergrid multiple.
         let (_, _, is_supergrid) = supergrid_params_ct(root_n_scaled);
         let level = TransformLevel::conditional_select(
             &TransformLevel::TemporalAnchor,
@@ -145,7 +142,7 @@ impl SupergridSampler {
 
         let supergrid_chain = SupergridChain {
             layers: chain.layers,
-            valid: chain.valid,  // kept for debugging; the returned `Choice` is authoritative
+            valid: chain.valid,
             transform_level: level,
         };
 
@@ -161,6 +158,13 @@ impl Default for SupergridSampler {
 
 // ============================================================================
 // Research-note extension: 90-rotation, 366 temporal anchor, 2520 macro grid
+//
+// Everything below builds on the existing, already-tested sampler above
+// rather than re-deriving a second sampling loop. `TransformLevel` carries
+// no secret data (it's a public tag, exactly like `SecretMode` in
+// `security::witness`), so branching on it directly is fine; nothing here
+// branches on chain contents or scaled witness values themselves, those
+// stay behind `Choice`/`conditional_select` throughout.
 // ============================================================================
 
 pub const MICRO_ANCHOR: u64 = 366;
@@ -203,13 +207,18 @@ impl TransformLevel {
     }
 }
 
+/// Lets `TransformLevel` be chosen via `conditional_select` alongside the
+/// chain data it tags, the same way `u64::conditional_select` picks layer
+/// values in `select_chain`/`select_supergrid_chain` below.
 impl ConditionallySelectable for TransformLevel {
     fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
         TransformLevel::from_u8(u8::conditional_select(&a.to_u8(), &b.to_u8(), choice))
     }
 }
 
-/// A 3-layer chain tagged with the transform used to produce it.
+/// A 3-layer chain tagged with the transform used to produce it. Kept
+/// separate from `sampler::MrsChain` (no `transform_level` field there)
+/// to avoid disturbing that type's existing, already-tested call sites.
 #[derive(Debug, Clone, PartialEq, Zeroize)]
 #[zeroize(drop)]
 pub struct SupergridChain {
@@ -246,7 +255,9 @@ pub fn select_supergrid_chain(
     }
 }
 
-/// Applies the 90-rotation to a single (A, B) pair.
+/// Applies the 90-rotation to a single (A, B) pair. Pure wrapping
+/// arithmetic, no branches, no data-dependent loop bound — inherently
+/// constant-time already.
 pub fn rotate_90(pair: &DiophantinePair, delta_a: u64, delta_b: u64) -> DiophantinePair {
     let delta_a_9 = delta_a.wrapping_mul(NINE_MODULUS);
     let delta_b_9 = delta_b.wrapping_mul(NINE_MODULUS);
@@ -264,7 +275,9 @@ pub fn rotate_90(pair: &DiophantinePair, delta_a: u64, delta_b: u64) -> Diophant
     }
 }
 
-/// Verifies that a rotated pair still satisfies 19A* + 9B* = 90*N + 81*delta_b.
+/// Verifies that a rotated pair still satisfies 19A* + 9B* = 90*N + 81*delta_b,
+/// and that both components are nonzero. Fully `Choice`-based, no branch
+/// on any of the (potentially secret-derived) rotated values.
 pub fn verify_90_rotation(original_n: u64, rotated: &DiophantinePair, delta_b: u64) -> Choice {
     let expected_n = ROTATION_FACTOR
         .wrapping_mul(original_n)
@@ -291,7 +304,10 @@ pub fn pair_is_nine_homogeneous(pair: &DiophantinePair) -> Choice {
     is_nine_homogeneous(pair.a) & is_nine_homogeneous(pair.b)
 }
 
-/// Checks that `n` both sits on a 366-second boundary and has digital root 6.
+/// Checks that `n` both sits on a 366-second boundary and has digital
+/// root 6 (the perfect-six invariant of the temporal anchor). No branch:
+/// the multiple check and the digital-root check are both folded through
+/// `ct_eq` and combined with `&`.
 pub fn verify_temporal_anchor(n: u64) -> Choice {
     let is_multiple = n.ct_eq(&(n.wrapping_div(MICRO_ANCHOR).wrapping_mul(MICRO_ANCHOR)));
     let dr_is_six = digital_root(n).ct_eq(&PERFECT_SIX);
@@ -306,8 +322,9 @@ pub fn temporal_root_from_timestamp(timestamp: u64) -> u64 {
 }
 
 /// Constant-time core: reduces a supergrid-scaled `n` down to its micro
-/// representation and reports (via `Choice`) whether `n` actually sits on
-/// a 2520-boundary.
+/// representation and reports (via `Choice`, not a branch) whether `n`
+/// actually sits on a 2520-boundary. Mirrors the `..._ct` + `Option`
+/// wrapper pattern `cdf_sampler` uses for `sample_three_layers_ct`.
 pub fn supergrid_params_ct(n: u64) -> (u64, u64, Choice) {
     let is_multiple = n.ct_eq(&(n.wrapping_div(SUPER_GRID).wrapping_mul(SUPER_GRID)));
     let k = n.wrapping_div(SUPER_GRID);
@@ -335,8 +352,13 @@ pub fn micro_to_supergrid(micro_pair: &DiophantinePair) -> DiophantinePair {
 }
 
 impl SupergridSampler {
-    /// Samples a chain anchored to the 366-second window containing `timestamp`,
-    /// reusing the existing `sample_three_layers_scaled_with_retries`.
+    /// Samples a chain anchored to the 366-second window containing
+    /// `timestamp`, reusing the existing, already-tested
+    /// `sample_three_layers_scaled_with_retries` rather than a separate
+    /// sampling loop. The resulting `transform_level` tag is chosen via
+    /// `TransformLevel::conditional_select` rather than an `if`, so
+    /// tagging itself does not branch on the (public but consistently
+    /// treated) anchor value.
     pub fn sample_temporal_chain(
         &self,
         timestamp: u64,
@@ -362,7 +384,11 @@ impl SupergridSampler {
 }
 
 /// Verifies a chain produced by `sample_temporal_chain` against its
-/// claimed scaled root.
+/// claimed scaled root: the defining equation on the first layer, and,
+/// for any transform level other than `Raw`, 9-homogeneity on every
+/// layer. `chain.transform_level` is a public tag (see the type's doc
+/// comment), so matching on it directly is consistent with how
+/// `security::witness` branches on `SecretMode`.
 pub fn verify_temporal_chain(chain: &SupergridChain, root_n_scaled: u64) -> Choice {
     let length_ok = Choice::from((chain.layers.len() == 3) as u8);
 
@@ -444,6 +470,7 @@ mod tests {
 
     #[test]
     fn test_rotate_90_preserves_equation() {
+        // Start from a pair that already satisfies 19A + 9B = N.
         let original_n = 3_000_001u64;
         let a = 1u64;
         let b = (original_n - 19 * a) / 9;
@@ -472,6 +499,7 @@ mod tests {
 
     #[test]
     fn test_verify_temporal_anchor_accepts_valid_anchor() {
+        // MICRO_ANCHOR itself (k=1) must satisfy the invariant.
         assert_eq!(verify_temporal_anchor(MICRO_ANCHOR).unwrap_u8(), 1);
         assert_eq!(verify_temporal_anchor(MICRO_ANCHOR * 2).unwrap_u8(), 1);
     }
@@ -494,6 +522,7 @@ mod tests {
         let (micro_n, k) = supergrid_params(SUPER_GRID).expect("2520 must be a valid supergrid n");
         assert_eq!(k, 1);
         assert_eq!(micro_n, PERFECT_TWENTYEIGHT);
+        // 28 = 19*1 + 9*1
         assert_eq!(19 * 1 + 9 * 1, micro_n);
     }
 
@@ -507,6 +536,7 @@ mod tests {
         let sampler = SupergridSampler::new();
         let mut rng = OsRng;
 
+        // A timestamp whose window's scaled root is sampleable.
         let timestamp = 3_000_001u64 * MICRO_ANCHOR;
         let root_n = temporal_root_from_timestamp(timestamp);
 
