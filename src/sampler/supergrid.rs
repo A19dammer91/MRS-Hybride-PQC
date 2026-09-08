@@ -231,7 +231,7 @@ pub fn rotate_90(pair: &DiophantinePair, delta_a: u64, delta_b: u64) -> Diophant
 
     let b_star = ROTATION_FACTOR
         .wrapping_mul(pair.b)
-        .wrapping_sub(19u64.wrapping_mul(delta_a_9))
+        .wrapping_sub(19u64.wrapping_mul(delta_a))
         .wrapping_add(delta_b_9);
 
     DiophantinePair {
@@ -409,11 +409,9 @@ mod tests {
 
     #[test]
     fn test_rotate_90_preserves_equation() {
-        // Kies een geldige representatie voor original_n = 3_000_001
-        // We zoeken a zodat 19a ≡ original_n (mod 9) -> a ≡ 4 (mod 9)
         let original_n = 3_000_001u64;
         let a = 4u64;
-        let b = (original_n - 19 * a) / 9; // 2_999_925 / 9 = 333325
+        let b = (original_n - 19 * a) / 9;
         let original_pair = DiophantinePair { a, b };
         assert_eq!(19 * original_pair.a + 9 * original_pair.b, original_n);
 
@@ -438,9 +436,7 @@ mod tests {
 
     #[test]
     fn test_verify_temporal_anchor_accepts_valid_anchor() {
-        // 366 heeft digital root 6
         assert_eq!(verify_temporal_anchor(MICRO_ANCHOR).unwrap_u8(), 1);
-        // 366 * 7 = 2562, digital root = 2+5+6+2 = 15 -> 6
         assert_eq!(verify_temporal_anchor(MICRO_ANCHOR * 7).unwrap_u8(), 1);
     }
 
@@ -451,10 +447,9 @@ mod tests {
 
     #[test]
     fn test_temporal_root_from_timestamp_floors_to_window() {
-        // Kies een timestamp die floort naar een geldige root met digital root 6
-        let ts = MICRO_ANCHOR * 7 + 100; // 366*7 + 100 = 2562 + 100 = 2662
+        let ts = MICRO_ANCHOR * 7 + 100;
         let root = temporal_root_from_timestamp(ts);
-        assert_eq!(root, MICRO_ANCHOR * 7); // 2562
+        assert_eq!(root, MICRO_ANCHOR * 7);
         assert_eq!(verify_temporal_anchor(root).unwrap_u8(), 1);
     }
 
