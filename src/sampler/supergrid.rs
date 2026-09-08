@@ -1,7 +1,7 @@
 use rand_core::RngCore;
-use subtle::{ConstantTimeEq, Choice};
+use subtle::{Choice, ConstantTimeEq};
 
-use super::{MrsChain, LayerParams};
+use super::{LayerParams, MrsChain};
 
 pub struct SupergridSampler {
     pub scale_factor: u64,
@@ -30,9 +30,11 @@ impl SupergridSampler {
 
         let a_0 = 1 + ((n_base.wrapping_sub(1)) % 9);
         let b_0 = n_base.checked_sub(19 * a_0)?.checked_div(9)?;
-        
+
         let k_max = b_0 / 19;
-        if k_max == 0 { return None; }
+        if k_max == 0 {
+            return None;
+        }
 
         let mut rand_buf = [0u8; 8];
         rng.fill_bytes(&mut rand_buf);
@@ -48,13 +50,20 @@ impl SupergridSampler {
         Some((a_scaled, b_scaled))
     }
 
-    pub fn sample_three_layers_scaled(&self, root_n_scaled: u64, mut rng: impl RngCore) -> Option<MrsChain> {
+    pub fn sample_three_layers_scaled(
+        &self,
+        root_n_scaled: u64,
+        mut rng: impl RngCore,
+    ) -> Option<MrsChain> {
         let mut current_n = root_n_scaled;
         let mut layers = Vec::with_capacity(3);
 
         for _ in 0..3 {
             let (a_scaled, b_scaled) = self.sample_layer_scaled(current_n, &mut rng)?;
-            layers.push(LayerParams { a: a_scaled, b: b_scaled });
+            layers.push(LayerParams {
+                a: a_scaled,
+                b: b_scaled,
+            });
             current_n = a_scaled;
         }
 
@@ -71,7 +80,11 @@ mod tests {
     use rand::rngs::OsRng;
 
     fn calculate_digital_root(n: u64) -> u64 {
-        if n == 0 { 0 } else { 1 + ((n - 1) % 9) }
+        if n == 0 {
+            0
+        } else {
+            1 + ((n - 1) % 9)
+        }
     }
 
     #[test]
