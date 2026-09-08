@@ -1,7 +1,8 @@
 use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
 
-use super::{LayerParams, MrsChain};
+use crate::core::diophantine::DiophantinePair;
+use super::MrsChain;
 
 pub struct SupergridSampler {
     pub scale_factor: u64,
@@ -60,7 +61,7 @@ impl SupergridSampler {
 
         for _ in 0..3 {
             let (a_scaled, b_scaled) = self.sample_layer_scaled(current_n, &mut rng)?;
-            layers.push(LayerParams {
+            layers.push(DiophantinePair {
                 a: a_scaled,
                 b: b_scaled,
             });
