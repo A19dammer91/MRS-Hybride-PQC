@@ -460,7 +460,7 @@ mod tests {
         let (micro_n, k) = supergrid_params(SUPER_GRID).expect("2520 must be a valid supergrid n");
         assert_eq!(k, 1);
         assert_eq!(micro_n, PERFECT_TWENTYEIGHT);
-        assert_eq!(19 * 1 + 9 * 1, micro_n);
+        assert_eq!(19 + 9, micro_n);   // <-- OPGELOST: verwijder * 1
     }
 
     #[test]
