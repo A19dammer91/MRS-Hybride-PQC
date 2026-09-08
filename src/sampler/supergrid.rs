@@ -1,4 +1,4 @@
-use rand_core::RngCore;
+use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
 
 use super::{LayerParams, MrsChain};
