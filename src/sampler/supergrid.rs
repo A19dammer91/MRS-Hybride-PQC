@@ -1,19 +1,8 @@
 use rand_core::RngCore;
 use subtle::{ConstantTimeEq, Choice};
 
-// Importing core types from your crate framework
-// Adjust paths if your crate structure requires crate::crypto::hybrid::DiophantinePair etc.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiophantinePair {
-    pub a: u64,
-    pub b: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MrsChain {
-    pub layers: Vec<DiophantinePair>,
-    pub valid: bool,
-}
+// Import the official MrsChain and types from the parent sampler module
+use super::{MrsChain, cdf_sampler::DiophantinePair}; // Adjust if cdf_sampler uses an array or specific struct
 
 /// Sampler implementing the scale factor transformation from the research notes.
 /// Multiplies the mathematical elements by a factor of 90 to camouflage the 
@@ -101,14 +90,8 @@ mod tests {
     use super::*;
     use rand::rngs::OsRng;
 
-    /// Helper function to compute the mathematical digital root (dr).
-    /// Enforces that for all N > 0, the output strictly lands in the 1..9 range.
     fn calculate_digital_root(n: u64) -> u64 {
-        if n == 0 { 
-            0 
-        } else { 
-            1 + ((n - 1) % 9) 
-        }
+        if n == 0 { 0 } else { 1 + ((n - 1) % 9) }
     }
 
     #[test]
@@ -116,14 +99,11 @@ mod tests {
         let sampler = SupergridSampler::new();
         let mut rng = OsRng;
 
-        // Using a larger root input to support depth=3 without hitting underflow zones early
         let base_root = 1_000_000u64;
         let root_n_scaled = sampler.transform_to_supergrid(base_root);
 
-        // 1. Verify the root injection point
         assert_eq!(calculate_digital_root(root_n_scaled), 9);
 
-        // 2. Generate the full 3-layer chain
         let chain_opt = sampler.sample_three_layers_scaled(root_n_scaled, &mut rng);
         assert!(chain_opt.is_some(), "Failed to generate a 3-layer chain for scaled root");
 
@@ -131,30 +111,14 @@ mod tests {
         assert_eq!(chain.layers.len(), 3, "Chain must contain exactly 3 layers");
         assert!(chain.valid);
 
-        // 3. Iteratively audit every layer in the generated witness path
         let mut expected_n = root_n_scaled;
         for (i, layer) in chain.layers.iter().enumerate() {
-            // Verify structural MRS equation: N = 19A + 9B
             let reconstructed_n = (19 * layer.a) + (9 * layer.b);
-            assert_eq!(
-                expected_n, 
-                reconstructed_n, 
-                "Algebraic breakdown failed at layer {}", i
-            );
+            assert_eq!(expected_n, reconstructed_n, "Algebraic breakdown failed at layer {}", i);
 
-            // Verify camouflage uniformity: dr(A) == 9 and dr(B) == 9
-            assert_eq!(
-                calculate_digital_root(layer.a), 
-                9, 
-                "Layer {} parameter 'a' leaked digital root structure", i
-            );
-            assert_eq!(
-                calculate_digital_root(layer.b), 
-                9, 
-                "Layer {} parameter 'b' leaked digital root structure", i
-            );
+            assert_eq!(calculate_digital_root(layer.a), 9, "Layer {} 'a' leaked dr structure", i);
+            assert_eq!(calculate_digital_root(layer.b), 9, "Layer {} 'b' leaked dr structure", i);
 
-            // Prepare validation input for the next nested layer (N <- A)
             expected_n = layer.a;
         }
     }
