@@ -5,3 +5,9 @@ pub use cdf_sampler::{
     sample_three_layers_ct_with_retries, sample_three_layers_ct_with_retries_raw,
     sample_three_layers_safe, sample_three_layers_safe_raw, select_chain, LayerParams, MrsChain,
 };
+
+// Experimental Supergrid transformation sampler from the research notes
+pub mod supergrid;
+
+// Re-export the SupergridSampler struct for cleaner framework-level imports
+pub use supergrid::SupergridSampler;
