@@ -1,8 +1,8 @@
 use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
 
-use crate::core::diophantine::DiophantinePair;
 use super::{select_chain, MrsChain};
+use crate::core::diophantine::DiophantinePair;
 
 pub struct SupergridSampler {
     pub scale_factor: u64,
@@ -53,7 +53,11 @@ impl SupergridSampler {
 
     /// Core constant-time step for a single 3-layer attempt.
     /// Returns the chain and a Choice indicating whether the generation was successful.
-    fn sample_three_layers_scaled_raw(&self, root_n_scaled: u64, mut rng: impl RngCore) -> (MrsChain, Choice) {
+    fn sample_three_layers_scaled_raw(
+        &self,
+        root_n_scaled: u64,
+        mut rng: impl RngCore,
+    ) -> (MrsChain, Choice) {
         let mut current_n = root_n_scaled;
         let mut layers = Vec::with_capacity(3);
         let mut valid = Choice::from(1);
@@ -99,7 +103,8 @@ impl SupergridSampler {
         let mut found = Choice::from(0);
 
         for _ in 0..max_attempts {
-            let (candidate, candidate_valid) = self.sample_three_layers_scaled_raw(root_n_scaled, &mut rng);
+            let (candidate, candidate_valid) =
+                self.sample_three_layers_scaled_raw(root_n_scaled, &mut rng);
             let take_this = candidate_valid & !found;
             best = select_chain(&best, &candidate, take_this);
             found |= candidate_valid;
@@ -138,7 +143,8 @@ mod tests {
         assert_eq!(calculate_digital_root(root_n_scaled), 9);
 
         // Execute the production retry loop (10 standard attempts)
-        let chain_opt = sampler.sample_three_layers_scaled_with_retries(root_n_scaled, &mut rng, 10);
+        let chain_opt =
+            sampler.sample_three_layers_scaled_with_retries(root_n_scaled, &mut rng, 10);
         assert!(
             chain_opt.is_some(),
             "Failed to sample a valid 3-layer chain with retries for root_n_scaled {}",
