@@ -143,13 +143,13 @@ impl MasterSecret {
 
         for attempt in 0u32..Self::MAX_TEMPORAL_ATTEMPTS {
             let seed =
-                Self::derive_temporal_seed(self.key_bytes_pub(), identity, timestamp, attempt);
+                Self::derive_temporal_seed(self.key_bytes(), identity, timestamp, attempt);
             let mut rng = TemporalRng::from_seed(seed);
 
             let (chain, chain_valid) = sampler.sample_temporal_chain_raw(root_n_scaled, timestamp, &mut rng);
             let chain_hash = hash_supergrid_chain(&chain);
             let candidate_tag = Self::compute_temporal_binding_tag(
-                self.key_bytes_pub(),
+                self.key_bytes(),
                 identity,
                 timestamp,
                 &chain_hash,
@@ -198,7 +198,7 @@ impl MasterSecret {
 
         let chain_hash = hash_supergrid_chain(&witness.chain);
         let expected_tag = Self::compute_temporal_binding_tag(
-            self.key_bytes_pub(),
+            self.key_bytes(),
             identity,
             witness.timestamp,
             &chain_hash,
