@@ -1,19 +1,14 @@
 use rand_core::RngCore;
 use subtle::{ConstantTimeEq, Choice};
 
-// Import the official MrsChain and types from the parent sampler module
-use super::{MrsChain, cdf_sampler::DiophantinePair}; // Adjust if cdf_sampler uses an array or specific struct
+use super::{MrsChain, LayerParams};
 
-/// Sampler implementing the scale factor transformation from the research notes.
-/// Multiplies the mathematical elements by a factor of 90 to camouflage the 
-/// digital root patterns, ensuring dr(N) = 9 across active layers.
 pub struct SupergridSampler {
-    pub scale_factor: u64,   // 90 as specified in docs/research-notes/
-    pub supergrid_mod: u64,  // 2520 (LCM of 1..10) for the structural grid boundaries
+    pub scale_factor: u64,
+    pub supergrid_mod: u64,
 }
 
 impl SupergridSampler {
-    /// Creates a new instance of the SupergridSampler with default constants.
     pub fn new() -> Self {
         Self {
             scale_factor: 90,
@@ -21,32 +16,24 @@ impl SupergridSampler {
         }
     }
 
-    /// Transforms a base public root N into the scaled supergrid space.
-    /// Guarantees that the digital root of the output is always 9.
     pub fn transform_to_supergrid(&self, root_n: u64) -> u64 {
         root_n.wrapping_mul(self.scale_factor)
     }
 
-    /// Constant-time check to verify if a scaled N aligns with the 2520 supergrid node.
     pub fn is_valid_supergrid_node(&self, n_scaled: u64) -> Choice {
         let rem = n_scaled % self.supergrid_mod;
         rem.ct_eq(&0u64)
     }
 
-    /// O(1) Constant-time sampling step adapted for the scaled supergrid space.
-    /// Extracts parameters using Crown Equations via base isomorphism, then projects back.
     pub fn sample_layer_scaled(&self, n_scaled: u64, mut rng: impl RngCore) -> Option<(u64, u64)> {
-        // 1. Isomorphic reduction back to base space to avoid overflow in Crown Equations
-        let n_base = n_scaled / self.scale_factor;
+        let n_base = n_scaled.checked_div(self.scale_factor)?;
 
-        // 2. Compute O(1) Crown Equations (branch-free digital root anchors)
         let a_0 = 1 + ((n_base.wrapping_sub(1)) % 9);
-        let b_0 = (n_base.wrapping_sub(19 * a_0)) / 9;
+        let b_0 = n_base.checked_sub(19 * a_0)?.checked_div(9)?;
         
         let k_max = b_0 / 19;
         if k_max == 0 { return None; }
 
-        // Rejection-free CSPRNG step over the uniform parameter distribution window
         let mut rand_buf = [0u8; 8];
         rng.fill_bytes(&mut rand_buf);
         let rand_val = u64::from_le_bytes(rand_buf);
@@ -55,23 +42,19 @@ impl SupergridSampler {
         let a = a_0.wrapping_add(9 * t);
         let b = b_0.wrapping_sub(19 * t);
 
-        // 3. Project outputs back to the supergrid space to lock dr(A) = dr(B) = 9
-        let a_scaled = a.wrapping_mul(self.scale_factor);
-        let b_scaled = b.wrapping_mul(self.scale_factor);
+        let a_scaled = a.checked_mul(self.scale_factor)?;
+        let b_scaled = b.checked_mul(self.scale_factor)?;
 
         Some((a_scaled, b_scaled))
     }
 
-    /// Constructs a full 3-layer nested MrsChain within the scaled supergrid space.
-    /// Iteratively sets N <- A for subsequent layers while maintaining dr=9 parameters.
     pub fn sample_three_layers_scaled(&self, root_n_scaled: u64, mut rng: impl RngCore) -> Option<MrsChain> {
         let mut current_n = root_n_scaled;
         let mut layers = Vec::with_capacity(3);
 
         for _ in 0..3 {
             let (a_scaled, b_scaled) = self.sample_layer_scaled(current_n, &mut rng)?;
-            layers.push(DiophantinePair { a: a_scaled, b: b_scaled });
-            // Set the next layer's root input to the current layer's A coefficient
+            layers.push(LayerParams { a: a_scaled, b: b_scaled });
             current_n = a_scaled;
         }
 
@@ -82,9 +65,6 @@ impl SupergridSampler {
     }
 }
 
-// =========================================================================
-// UNIT TESTS 
-// =========================================================================
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,19 +85,19 @@ mod tests {
         assert_eq!(calculate_digital_root(root_n_scaled), 9);
 
         let chain_opt = sampler.sample_three_layers_scaled(root_n_scaled, &mut rng);
-        assert!(chain_opt.is_some(), "Failed to generate a 3-layer chain for scaled root");
+        assert!(chain_opt.is_some());
 
         let chain = chain_opt.unwrap();
-        assert_eq!(chain.layers.len(), 3, "Chain must contain exactly 3 layers");
+        assert_eq!(chain.layers.len(), 3);
         assert!(chain.valid);
 
         let mut expected_n = root_n_scaled;
-        for (i, layer) in chain.layers.iter().enumerate() {
+        for layer in chain.layers.iter() {
             let reconstructed_n = (19 * layer.a) + (9 * layer.b);
-            assert_eq!(expected_n, reconstructed_n, "Algebraic breakdown failed at layer {}", i);
+            assert_eq!(expected_n, reconstructed_n);
 
-            assert_eq!(calculate_digital_root(layer.a), 9, "Layer {} 'a' leaked dr structure", i);
-            assert_eq!(calculate_digital_root(layer.b), 9, "Layer {} 'b' leaked dr structure", i);
+            assert_eq!(calculate_digital_root(layer.a), 9);
+            assert_eq!(calculate_digital_root(layer.b), 9);
 
             expected_n = layer.a;
         }
