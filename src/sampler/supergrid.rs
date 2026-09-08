@@ -311,7 +311,8 @@ impl SupergridSampler {
     ) -> Option<SupergridChain> {
         let root_n = temporal_root_from_timestamp(timestamp);
         let root_n_scaled = self.transform_to_supergrid(root_n);
-        let chain = self.sample_three_layers_scaled_with_retries(root_n_scaled, rng, max_attempts)?;
+        let chain =
+            self.sample_three_layers_scaled_with_retries(root_n_scaled, rng, max_attempts)?;
 
         let (_, _, is_supergrid) = supergrid_params_ct(root_n_scaled);
         let level = TransformLevel::conditional_select(

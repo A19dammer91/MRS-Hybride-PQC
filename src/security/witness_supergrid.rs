@@ -1,6 +1,6 @@
 use crate::sampler::supergrid::{
-    select_supergrid_chain, temporal_root_from_timestamp,
-    verify_temporal_chain, SupergridChain, SupergridSampler, TransformLevel, MICRO_ANCHOR,
+    select_supergrid_chain, temporal_root_from_timestamp, verify_temporal_chain, SupergridChain,
+    SupergridSampler, TransformLevel, MICRO_ANCHOR,
 };
 use crate::security::witness::MasterSecret;
 use hmac::{Hmac, Mac};
@@ -91,11 +91,11 @@ impl MasterSecret {
         let mut found = Choice::from(0);
 
         for attempt in 0u32..Self::MAX_TEMPORAL_ATTEMPTS {
-            let seed =
-                Self::derive_temporal_seed(self.key_bytes(), identity, timestamp, attempt);
+            let seed = Self::derive_temporal_seed(self.key_bytes(), identity, timestamp, attempt);
             let mut rng = TemporalRng::from_seed(seed);
 
-            let (chain, chain_valid) = sampler.sample_temporal_chain_raw(root_n_scaled, timestamp, &mut rng);
+            let (chain, chain_valid) =
+                sampler.sample_temporal_chain_raw(root_n_scaled, timestamp, &mut rng);
             let chain_hash = hash_supergrid_chain(&chain);
             let candidate_tag = Self::compute_temporal_binding_tag(
                 self.key_bytes(),
@@ -222,7 +222,8 @@ impl WitnessSpace90 {
         let mut found = Choice::from(0);
 
         for _ in 0..Self::MAX_ALIBI_ATTEMPTS {
-            let (chain, chain_valid) = sampler.sample_temporal_chain_raw(root_n_scaled, authentic.timestamp, rng);
+            let (chain, chain_valid) =
+                sampler.sample_temporal_chain_raw(root_n_scaled, authentic.timestamp, rng);
             let differs = !chains_equal_ct(&chain, &authentic.chain);
             let member_ok = self.verify_membership_raw(&chain, root_n_scaled);
             let candidate_ok = chain_valid & differs & member_ok;
@@ -397,7 +398,10 @@ mod tests {
             assert_eq!(witness.timestamp, ts);
             assert_eq!(witness.chain.layers.len(), 3);
         } else {
-            eprintln!("[WARN] No temporal witness generated for ts={} - may be expected", ts);
+            eprintln!(
+                "[WARN] No temporal witness generated for ts={} - may be expected",
+                ts
+            );
         }
     }
 
@@ -452,7 +456,10 @@ mod tests {
             return;
         };
 
-        assert_eq!(space.verify_membership(&alibi.0), WitnessStatus90::ValidButUnbound);
+        assert_eq!(
+            space.verify_membership(&alibi.0),
+            WitnessStatus90::ValidButUnbound
+        );
         let binding_check = master.verify_temporal_authenticity(&alibi.0, id, ts + 5);
         assert_eq!(binding_check, WitnessStatus90::BindingMismatch);
     }
