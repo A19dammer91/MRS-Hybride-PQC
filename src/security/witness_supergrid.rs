@@ -18,7 +18,7 @@
 //! branching on chain contents or secret-derived randomness.
 
 use crate::sampler::supergrid::{
-    sample_temporal_chain_raw, select_supergrid_chain, temporal_root_from_timestamp,
+    select_supergrid_chain, temporal_root_from_timestamp,
     verify_temporal_chain, SupergridChain, SupergridSampler, TransformLevel, MICRO_ANCHOR,
 };
 use crate::security::witness::MasterSecret;
@@ -146,8 +146,7 @@ impl MasterSecret {
                 Self::derive_temporal_seed(self.key_bytes_pub(), identity, timestamp, attempt);
             let mut rng = TemporalRng::from_seed(seed);
 
-            let (chain, chain_valid) =
-                sample_temporal_chain_raw(&sampler, root_n_scaled, timestamp, &mut rng);
+            let (chain, chain_valid) = sampler.sample_temporal_chain_raw(root_n_scaled, timestamp, &mut rng);
             let chain_hash = hash_supergrid_chain(&chain);
             let candidate_tag = Self::compute_temporal_binding_tag(
                 self.key_bytes_pub(),
@@ -288,8 +287,7 @@ impl WitnessSpace90 {
         let mut found = Choice::from(0);
 
         for _ in 0..Self::MAX_ALIBI_ATTEMPTS {
-            let (chain, chain_valid) =
-                sample_temporal_chain_raw(&sampler, root_n_scaled, authentic.timestamp, rng);
+            let (chain, chain_valid) = sampler.sample_temporal_chain_raw(root_n_scaled, authentic.timestamp, rng);
             let differs = !chains_equal_ct(&chain, &authentic.chain);
             let member_ok = self.verify_membership_raw(&chain, root_n_scaled);
             let candidate_ok = chain_valid & differs & member_ok;
