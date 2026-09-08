@@ -382,8 +382,9 @@ impl MasterSecret {
     // --- Internal API ---
 
     /// Internal access to the raw key, only for HMAC computations within
-    /// this module. Not public.
-    fn key_bytes(&self) -> &[u8; 32] {
+    /// this module and other modules in the same crate (e.g. witness_supergrid).
+    /// Not public outside the crate.
+    pub(crate) fn key_bytes(&self) -> &[u8; 32] {
         &self.key.0
     }
 
