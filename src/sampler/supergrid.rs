@@ -429,7 +429,8 @@ mod tests {
         let b = (original_n - 19 * a) / 9;
         let original_pair = DiophantinePair { a, b };
 
-        let rotated = rotate_90(&original_pair, 1, 1);
+        // Kies δa = 9 om te garanderen dat B' deelbaar is door 9.
+        let rotated = rotate_90(&original_pair, 9, 1);
         let homogeneous = pair_is_nine_homogeneous(&rotated);
         assert_eq!(homogeneous.unwrap_u8(), 1);
     }
