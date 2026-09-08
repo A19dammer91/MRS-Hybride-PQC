@@ -7,7 +7,10 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange?style=flat-square&logo=rust)](https://www.rust-lang.org)
 [![NIST](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20ML--KEM--1024-informational?style=flat-square)](https://csrc.nist.gov/projects/post-quantum-cryptography)
+[![Supergrid](https://img.shields.io/badge/supergrid-90%2F366%2F2520-6f42c1?style=flat-square)](docs/Supergrid%20Exploration/90-366-2520-transformation.md)
 [![Interactive Demo](https://img.shields.io/badge/demo-security%20game-ff69b4?style=flat-square&logo=googlechrome&logoColor=white)](demo/mrs-auth-security-game.html)
+
+`test result: ok. 85 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 54.26s`
 
 # MRS-AUTH
 
@@ -38,7 +41,7 @@
 - [Formal Verification](#formal-verification)
 - [Benchmarks](#benchmarks)
 - [Interactive Demo](#interactive-demo)
-- [Research Notes](#research-notes)
+- [Supergrid Exploration](#supergrid-exploration)
 - [Citation](#citation)
 - [Disclaimer](#disclaimer)
 - [License](#license)
@@ -183,7 +186,7 @@ MRS-AUTH has not undergone independent third-party audit and carries no formal c
 
 ## Architecture
 
-The protocol is organized into five functional blocks plus a hybrid coupling layer:
+The protocol is organized into six functional blocks plus a hybrid coupling layer:
 
 | Block | Module | Function | Description |
 |---|---|---|---|
@@ -191,8 +194,9 @@ The protocol is organized into five functional blocks plus a hybrid coupling lay
 | **2** | `sampler::cdf_sampler` | `sample_three_layers` | $O(1)$ closed-form triangle-valid sampling per layer with correct $K_{max}$ structural bounds filtering |
 | **3** | `security::witness` | `generate_authentic_witness` / `generate_alternative_witness` | Deterministic identity-bound witness derivation and coercion-resistant alternative witness generation |
 | **4** | `security::merkle` | `build_k_acceptance_root` / `verify_k_acceptance_proof` | Balanced Merkle commitment over the witness space |
+| **5** | `sampler::supergrid` / `security::witness_supergrid` | `sample_temporal_chain` / `generate_temporal_witness` | 90-rotation, 366-second temporal anchor, and 2520 macro-grid extension on top of the core witness layer |
 | **Coupling** | `crypto::hybrid` | `derive_hybrid_key` | HKDF-SHA256 key derivation mixing ML-KEM SS + MRS witness + session context |
-| **5** | `crypto::hybrid` | `encrypt_payload_hybrid` / `decrypt_payload_hybrid` | AES-256-GCM AEAD encryption/decryption |
+| **6** | `crypto::hybrid` | `encrypt_payload_hybrid` / `decrypt_payload_hybrid` | AES-256-GCM AEAD encryption/decryption |
 | **Auth** | `security::timecode` | `generate_timecode` / `run_with_temporal_barrier` | HMAC-SHA256 time-bound authentication codes protected via an interactive hardware clock barrier |
 
 ---
@@ -213,10 +217,8 @@ MRS-Hybride-PQC/
 │   └── mrs-auth-security-game.html  # Interactive browser-based security demo
 ├── docs/
 │   ├── user-manual.md      # English user manual for the interactive demo
-│   └── research-notes/     # Exploratory ideas, not part of the crate API
-│       ├── 90-366-2520-transformation.md
-│       ├── sampler-90-366.md
-│       └── witness-90-366.md
+│   └── Supergrid Exploration/  # Background material, not part of the crate API
+│       └── 90-366-2520-transformation.md
 ├── proofs/                 # EasyCrypt formal verification scripts
 │   ├── MRS_Core.ec         # Diophantine algebra, Popoviciu cardinality, Frobenius bound
 │   ├── MRS_Chain.ec        # Construction and structural verification of MRS chains
@@ -237,12 +239,14 @@ MRS-Hybride-PQC/
     │   └── shamir.rs       # Shamir Secret Sharing over GF(2^8) with commitment verification
     ├── sampler/
     │   ├── mod.rs
-    │   └── cdf_sampler.rs  # Weighted CDF sampler, 3-layer chain builder
+    │   ├── cdf_sampler.rs  # Weighted CDF sampler, 3-layer chain builder
+    │   └── supergrid.rs    # 90-rotation, 366 temporal anchor, 2520 macro-grid sampler
     └── security/
         ├── mod.rs
-        ├── witness.rs      # Witness generation, identity binding, coercion resistance
-        ├── timecode.rs     # Temporal barrier, HMAC timecodes, EUF-CMA & forward-secrecy games
-        └── merkle.rs       # Merkle commitment and inclusion proofs
+        ├── witness.rs            # Witness generation, identity binding, coercion resistance
+        ├── witness_supergrid.rs  # Temporal witness authentication (366-second window)
+        ├── timecode.rs           # Temporal barrier, HMAC timecodes, EUF-CMA & forward-secrecy games
+        └── merkle.rs             # Merkle commitment and inclusion proofs
 ```
 
 ---
@@ -291,6 +295,7 @@ The complete cryptographic stack is covered by a comprehensive test suite that r
 - **Shamir Secret Sharing**: split/recover roundtrips, commitment-mismatch detection, subset recovery, duplicate detection.
 - **At-rest protection**: AES-256-GCM seal/unseal roundtrip and wrong-key rejection.
 - **Sampler correctness**: structural validity of generated Diophantine chains across all layers.
+- **Supergrid extension**: 90-rotation equation preservation, 366-second temporal anchor validity/expiry, 2520 macro-grid reduction.
 - **Cross-module integration**: end-to-end framework encryption/decryption.
 
 ```bash
@@ -299,6 +304,10 @@ cargo test --all-features          # Include bigint extension tests
 cargo bench --bench sampler_bench  # Criterion benchmarks
 cargo fmt -- --check               # Verify formatting compliance
 cargo clippy -- -D warnings        # Lint check
+```
+
+```
+test result: ok. 85 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 54.26s
 ```
 
 All tests pass in CI with zero failures. The suite exercises both the happy path and the adversarial edge cases (insufficient Shamir shares, wrong commitments, corrupted binding tags, duress-mode derivation) to ensure that error conditions are caught explicitly rather than silently ignored.
@@ -580,11 +589,97 @@ pub trait ProverSpace {
 pub fn hash_chain(chain: &MrsChain) -> [u8; 32];
 ```
 
+### Supergrid Extension: Temporal Witness Authentication
+
+Defined in `src/sampler/supergrid.rs` and `src/security/witness_supergrid.rs`.
+
+Builds on the core witness layer above with a time dimension: a witness
+generated here is only valid within the 366-second window it was created
+in, using the 90-rotation and 2520 macro-grid transform described in
+[Supergrid Exploration](#supergrid-exploration).
+
+```rust
+pub enum TransformLevel {
+    Raw,
+    Rotated90,
+    SuperGrid,
+    TemporalAnchor,
+}
+
+pub struct SupergridChain {
+    pub layers: Vec<DiophantinePair>,
+    pub valid: bool,
+    pub transform_level: TransformLevel,
+}
+
+pub struct Witness90 {
+    pub chain: SupergridChain,
+    pub binding_tag: [u8; 32],
+    pub session_id: Vec<u8>,
+    pub timestamp: u64,
+}
+
+pub struct Alibi90(pub Witness90);
+
+pub struct WitnessSpace90 {
+    pub depth: usize,
+}
+
+pub enum WitnessStatus90 {
+    ValidButUnbound,
+    Authentic,
+    Invalid,
+    BindingMismatch,
+    /// Witness presented outside its 366-second window.
+    Expired,
+}
+
+impl MasterSecret {
+    /// Deterministically derives the witness bound to `identity` for the
+    /// 366-second window containing `timestamp`.
+    pub fn generate_temporal_witness(
+        &self,
+        space: &WitnessSpace90,
+        identity: &[u8],
+        timestamp: u64,
+    ) -> Option<Witness90>;
+
+    /// Checks binding AND freshness: returns Expired if presented outside
+    /// the 366-second window, otherwise Authentic or BindingMismatch.
+    pub fn verify_temporal_authenticity(
+        &self,
+        witness: &Witness90,
+        identity: &[u8],
+        current_timestamp: u64,
+    ) -> WitnessStatus90;
+}
+
+impl WitnessSpace90 {
+    pub fn new(depth: usize) -> Self;
+
+    pub fn verify_membership(&self, witness: &Witness90) -> WitnessStatus90;
+
+    /// Generates an alternative witness for the SAME 366-second window as
+    /// `authentic`, so it stays plausible for the same period.
+    pub fn generate_alternative_witness(
+        &self,
+        authentic: &Witness90,
+        rng: &mut impl RngCore,
+    ) -> Option<Alibi90>;
+}
+```
+
 ### Low-Level Primitives
 
 ```rust
 // --- Sampler ---
 pub fn sample_three_layers_ct(root_n: u64, rng: &mut impl RngCore) -> Option<MrsChain>;
+
+// --- Supergrid Sampler ---
+pub fn rotate_90(pair: &DiophantinePair, delta_a: u64, delta_b: u64) -> DiophantinePair;
+pub fn verify_temporal_anchor(n: u64) -> Choice;
+pub fn temporal_root_from_timestamp(timestamp: u64) -> u64;
+pub fn supergrid_params(n: u64) -> Option<(u64, u64)>;
 
 // --- Security & Hardening Games ---
 pub fn run_with_temporal_barrier<F, T>(timeout: Duration, f: F) -> Option<T>
@@ -667,9 +762,8 @@ benchmark workflow. Absolute times reflect that specific shared runner
 environment rather than dedicated, isolated hardware, so they are read
 as throughput figures, not as side-channel claims (see the
 [Formal Verification](#formal-verification) scope note above). Repeated
-runs on shared runners can show more variance, occasionally into the
-390 to 400 µs range depending on background load. The figures below are
-from a low-noise run and stand as the representative baseline.
+runs on shared runners can show more variance depending on background
+load.
 
 | Benchmark | Root N | Median Time | 95% CI |
 |---|---|---|---|
@@ -706,33 +800,37 @@ each tab, expected results, and troubleshooting tips.
 
 ---
 
-## Research Notes
+## Supergrid Exploration
 
-Exploratory extensions to the core framework, not implemented in `src/`
-and not part of the crate's API, are documented in
-[`docs/research-notes/`](docs/research-notes/).
+Background material for the 90/366/2520 transformation is documented in
+[`docs/Supergrid Exploration/`](docs/Supergrid%20Exploration/).
 
-The current note explores a transformation that multiplies a witness
-pair by a constant factor of 90, which forces the digital root of every
-resulting number to 9. An accompanying EasyCrypt proof draft formally
-establishes that this transformation preserves the underlying MRS
-equation, and that a bijection exists between the witness space for
-N = 366 and its scaled counterpart at N = 32940, generalizing to a
-larger supergrid at multiples of 2520. The proof further shows that an
-adversary limited to checking digital roots gains no advantage in
-distinguishing an authentic witness from an alibi in the transformed
-space, consistent with the "A₀ Bias" strategy already tested empirically
-in the [interactive demo](#interactive-demo).
+The note explores a transformation that multiplies a witness pair by a
+constant factor of 90, which forces the digital root of every resulting
+number to 9. An accompanying EasyCrypt proof draft formally establishes
+that this transformation preserves the underlying MRS equation, and that
+a bijection exists between the witness space for N = 366 and its scaled
+counterpart at N = 32940, generalizing to a larger supergrid at multiples
+of 2520. The proof further shows that an adversary limited to checking
+digital roots gains no advantage in distinguishing an authentic witness
+from an alibi in the transformed space, consistent with the "A₀ Bias"
+strategy already tested empirically in the [interactive demo](#interactive-demo).
 
-- [`90-366-2520-transformation.md`](docs/research-notes/90-366-2520-transformation.md): the mathematical background and the formal findings
-- [`sampler-90-366.md`](docs/research-notes/sampler-90-366.md): the draft sampler implementing the transformation
-- [`witness-90-366.md`](docs/research-notes/witness-90-366.md): the draft authentication layer, including a related time-windowed witness scheme
+- [`90-366-2520-transformation.md`](docs/Supergrid%20Exploration/90-366-2520-transformation.md): the mathematical background and the formal findings
+
+The sampler and authentication layer described in the note are implemented
+in [`src/sampler/supergrid.rs`](src/sampler/supergrid.rs) and
+[`src/security/witness_supergrid.rs`](src/security/witness_supergrid.rs),
+see [Supergrid Extension: Temporal Witness Authentication](#supergrid-extension-temporal-witness-authentication)
+above for the API.
 
 ---
 
 ## Citation
 
-If you use MRS-AUTH in academic work, please cite:
+Academic use of MRS-AUTH does not require citation or attribution. If
+you'd like to cite this work anyway, the following reference is
+available:
 
 ```bibtex
 @misc{elissaoui2026forest,
