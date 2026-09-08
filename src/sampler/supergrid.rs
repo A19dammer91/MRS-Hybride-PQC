@@ -5,10 +5,6 @@ use zeroize::Zeroize;
 use super::{select_chain, MrsChain};
 use crate::core::diophantine::{digital_root, DiophantinePair};
 
-// ============================================================================
-// Existing production sampler (unchanged, already tested in CI)
-// ============================================================================
-
 pub struct SupergridSampler {
     pub scale_factor: u64,
     pub supergrid_mod: u64,
@@ -134,7 +130,7 @@ impl SupergridSampler {
         );
 
         let supergrid_chain = SupergridChain {
-            layers: chain.layers.clone(),  // FIX: clone to avoid move
+            layers: chain.layers.clone(),
             valid: chain.valid,
             transform_level: level,
         };
@@ -148,10 +144,6 @@ impl Default for SupergridSampler {
         Self::new()
     }
 }
-
-// ============================================================================
-// Research-note extension: 90-rotation, 366 temporal anchor, 2520 macro grid
-// ============================================================================
 
 pub const MICRO_ANCHOR: u64 = 366;
 pub const ROTATION_FACTOR: u64 = 90;
@@ -318,9 +310,10 @@ impl SupergridSampler {
         max_attempts: usize,
     ) -> Option<SupergridChain> {
         let root_n = temporal_root_from_timestamp(timestamp);
-        let chain = self.sample_three_layers_scaled_with_retries(root_n, rng, max_attempts)?;
+        let root_n_scaled = self.transform_to_supergrid(root_n);
+        let chain = self.sample_three_layers_scaled_with_retries(root_n_scaled, rng, max_attempts)?;
 
-        let (_, _, is_supergrid) = supergrid_params_ct(root_n);
+        let (_, _, is_supergrid) = supergrid_params_ct(root_n_scaled);
         let level = TransformLevel::conditional_select(
             &TransformLevel::TemporalAnchor,
             &TransformLevel::SuperGrid,
@@ -328,7 +321,7 @@ impl SupergridSampler {
         );
 
         Some(SupergridChain {
-            layers: chain.layers.clone(),  // FIX: clone to avoid move
+            layers: chain.layers.clone(),
             valid: chain.valid,
             transform_level: level,
         })
@@ -416,16 +409,17 @@ mod tests {
 
     #[test]
     fn test_rotate_90_preserves_equation() {
+        // Kies een geldige representatie voor original_n = 3_000_001
+        // We zoeken a zodat 19a ≡ original_n (mod 9) -> a ≡ 4 (mod 9)
         let original_n = 3_000_001u64;
-        let a = 1u64;
-        let b = (original_n - 19 * a) / 9;
+        let a = 4u64;
+        let b = (original_n - 19 * a) / 9; // 2_999_925 / 9 = 333325
         let original_pair = DiophantinePair { a, b };
         assert_eq!(19 * original_pair.a + 9 * original_pair.b, original_n);
 
         let delta_a = 1u64;
         let delta_b = 1u64;
         let rotated = rotate_90(&original_pair, delta_a, delta_b);
-
         let ok = verify_90_rotation(original_n, &rotated, delta_b);
         assert_eq!(ok.unwrap_u8(), 1);
     }
@@ -433,7 +427,7 @@ mod tests {
     #[test]
     fn test_rotate_90_produces_nine_homogeneous_pair() {
         let original_n = 3_000_001u64;
-        let a = 1u64;
+        let a = 4u64;
         let b = (original_n - 19 * a) / 9;
         let original_pair = DiophantinePair { a, b };
 
@@ -444,8 +438,10 @@ mod tests {
 
     #[test]
     fn test_verify_temporal_anchor_accepts_valid_anchor() {
+        // 366 heeft digital root 6
         assert_eq!(verify_temporal_anchor(MICRO_ANCHOR).unwrap_u8(), 1);
-        assert_eq!(verify_temporal_anchor(MICRO_ANCHOR * 2).unwrap_u8(), 1);
+        // 366 * 7 = 2562, digital root = 2+5+6+2 = 15 -> 6
+        assert_eq!(verify_temporal_anchor(MICRO_ANCHOR * 7).unwrap_u8(), 1);
     }
 
     #[test]
@@ -455,9 +451,10 @@ mod tests {
 
     #[test]
     fn test_temporal_root_from_timestamp_floors_to_window() {
-        let ts = MICRO_ANCHOR * 5 + 100;
+        // Kies een timestamp die floort naar een geldige root met digital root 6
+        let ts = MICRO_ANCHOR * 7 + 100; // 366*7 + 100 = 2562 + 100 = 2662
         let root = temporal_root_from_timestamp(ts);
-        assert_eq!(root, MICRO_ANCHOR * 5);
+        assert_eq!(root, MICRO_ANCHOR * 7); // 2562
         assert_eq!(verify_temporal_anchor(root).unwrap_u8(), 1);
     }
 
@@ -481,11 +478,12 @@ mod tests {
 
         let timestamp = 3_000_001u64 * MICRO_ANCHOR;
         let root_n = temporal_root_from_timestamp(timestamp);
+        let root_n_scaled = sampler.transform_to_supergrid(root_n);
 
         let chain_opt = sampler.sample_temporal_chain(timestamp, &mut rng, 10);
         if let Some(chain) = chain_opt {
             assert_eq!(chain.layers.len(), 3);
-            let ok = verify_temporal_chain(&chain, root_n);
+            let ok = verify_temporal_chain(&chain, root_n_scaled);
             assert_eq!(ok.unwrap_u8(), 1);
         } else {
             eprintln!(
