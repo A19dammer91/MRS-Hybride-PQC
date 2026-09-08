@@ -1,8 +1,8 @@
 use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
 
-use crate::core::diophantine::DiophantinePair;
 use super::MrsChain;
+use crate::core::diophantine::DiophantinePair;
 
 pub struct SupergridSampler {
     pub scale_factor: u64,
