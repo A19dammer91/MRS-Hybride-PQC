@@ -118,6 +118,12 @@ impl SupergridSampler {
     }
 }
 
+impl Default for SupergridSampler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
