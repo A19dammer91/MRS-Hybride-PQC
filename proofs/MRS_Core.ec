@@ -26,6 +26,9 @@
 (*  - `mulzI` and `ltz_pmod` are NOT used (not available in r2024.09) *)
 (*    injectivity of multiplication by a nonzero constant is         *)
 (*    delegated to `smt()` directly.                                  *)
+(*  - `~` is NOT used for negation: `!` or an explicit implication   *)
+(*    `P => false` is used instead, since `~` triggers a parse error  *)
+(*    in r2024.09 in various positions.                               *)
 (*  - Long `rewrite Heq` chains are fragile in r2024.09; modular      *)
 (*    arithmetic is delegated to `smt(modzDl modzMl modz_mod)`.       *)
 (*  - `case (cond).` without `=>` pattern is a parse error in         *)
@@ -38,6 +41,9 @@
 (*  - Conjunctive lemmas are bound to a name before splitting:        *)
 (*    `have hrange := L.` followed by `have [..] := hrange.` instead  *)
 (*    of `have [..] := L.` directly.                                  *)
+(*  - Module variable names carry no digits (e.g. no `a0_val`,        *)
+(*    `B0_val`, `k0`, `tmax`): digits inside identifiers trigger a    *)
+(*    parse error in `var` declarations in r2024.09.                  *)
 (* ================================================================= *)
 
 require import AllCore Int IntDiv Real Distr List.
@@ -367,9 +373,9 @@ proof.
     have hmod_lt : (B0 N - 19 * ((A - a0 N) %/ 9)) %% 19 < 19 by smt(modz_ge0 divz_eq).
     smt().
   exists ((A - a0 N) %/ 9).
-split.
-- smt().
-- split; smt().
+  split.
+  - smt().
+  - split; smt().
 qed.
 
 (* ----------------------------------------------------------------- *)
@@ -417,8 +423,6 @@ proof.
   rewrite /dr.
   have h2 : ! (2 * dr N <= 0) by smt().
   rewrite h2 /=.
-  have lhs_ge1 : 1 <= B0 N - 19*k by smt().
-have lhs_pos : 0 < B0 N - 19*k by smt().
   have cong2 : (B0 N - 19 * k - 1) %% 9 = (dr (2 * dr N) - 1) %% 9.
     have := hcong.
     smt(modzDl modzNm).
@@ -429,7 +433,7 @@ qed.
 (* Frobenius boundary under Positive Anchor                          *)
 (* ----------------------------------------------------------------- *)
 
-lemma frobenius_162_not_rep (A B : int) : is_rep (162) A B => false.
+lemma frobenius_162_not_rep (A B : int) : is_rep 162 A B => false.
 proof.
   move=> hrep.
   have hA : 1 <= A.
@@ -490,8 +494,8 @@ proof.
 qed.
 
 lemma frobenius_boundary :
-  (forall (A B : int), is_rep (162) A B => false) /\
-  (exists (A B : int), is_rep (163) A B).
+  (forall (A B : int), is_rep 162 A B => false) /\
+  (exists (A B : int), is_rep 163 A B).
 proof.
   split.
   - move=> A B.
@@ -521,29 +525,44 @@ qed.
 
 (* ----------------------------------------------------------------- *)
 (* Module for representation sampling                                 *)
+(*                                                                    *)
+(* All module variable names are digit-free (e.g. `anc` instead of   *)
+(* `a0_val`), because digits inside identifiers trigger a parse       *)
+(* error in `var` declarations in EasyCrypt r2024.09.                 *)
+(*                                                                    *)
+(* Naming convention:                                                 *)
+(*   anc      anchor      = a0 N                                      *)
+(*   bcmp     B-component = B0 N                                      *)
+(*   kbnd     K-bound     = kmax N                                    *)
+(*   dbl_dr   double dr   = dr (2 * dr N)                             *)
+(*   dbl_mod  dbl_dr mod 9 = dbl_dr %% 9                              *)
+(*   kbas     K-base      = k0                                        *)
+(*   tbnd     T-bound     = tmax                                      *)
+(*   ndx      index       = t                                         *)
+(*   kval     K-value     = k                                         *)
 (* ----------------------------------------------------------------- *)
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
-    var k;
-    k <$ [0..kmax N];
-    return (a0 N + 9 * k, B0 N - 19 * k);
+    var kval;
+    kval <$ [0..kmax N];
+    return (a0 N + 9 * kval, B0 N - 19 * kval);
   }
 
   proc sample_triangle(N : int) : int * int = {
-    var a0_val, B0_val, kmax_val, target_dr, target_r, k0, tmax, t, k;
-    a0_val   <- a0 N;
-    B0_val   <- B0 N;
-    kmax_val <- kmax N;
-    target_dr <- dr (2 * dr N);
-    target_r  <- target_dr %% 9;
-    k0 <- (B0_val - target_r) %% 9;
-    if (kmax_val < k0) {
+    var anc, bcmp, kbnd, dbl_dr, dbl_mod, kbas, tbnd, ndx, kval;
+    anc     <- a0 N;
+    bcmp    <- B0 N;
+    kbnd    <- kmax N;
+    dbl_dr  <- dr (2 * dr N);
+    dbl_mod <- dbl_dr %% 9;
+    kbas    <- (bcmp - dbl_mod) %% 9;
+    if (kbnd < kbas) {
       return (0, 0);
     }
-    tmax <- (kmax_val - k0) %/ 9;
-    t    <$ [0..tmax];
-    k    <- k0 + 9 * t;
-    return (a0_val + 9 * k, B0_val - 19 * k);
+    tbnd <- (kbnd - kbas) %/ 9;
+    ndx  <$ [0..tbnd];
+    kval <- kbas + 9 * ndx;
+    return (anc + 9 * kval, bcmp - 19 * kval);
   }
 }.
 
@@ -565,7 +584,7 @@ proof.
   move=> hN.
   proc.
   auto => />.
-  move=> &m k hk_lo hk_hi.
+  move=> &m kval hk_lo hk_hi.
   split.
   - apply linear_invariant => //.
     smt(kmax_ge0).
@@ -579,7 +598,7 @@ lemma sample_basic_equiv (N : int) :
 proof.
   move=> hN.
   proc.
-  seq 1 1 : (={k}).
+  seq 1 1 : (={kval}).
   - rnd; auto.
   - auto.
 qed.
@@ -602,20 +621,18 @@ proof.
     left; split => //.
   - move=> hk0_le t ht_lo ht_hi.
     right.
-    set k := (B0 N - dr (2 * dr N) %% 9) %% 9 + 9 * t.
-    have hk_lo : 0 <= k by smt(modz_ge0).
-    have hk_hi : k <= kmax N.
-      rewrite /k.
+    have hk_lo : 0 <= (B0 N - dr (2 * dr N) %% 9) %% 9 + 9 * t by smt(modz_ge0).
+    have hk_hi : (B0 N - dr (2 * dr N) %% 9) %% 9 + 9 * t <= kmax N.
       smt(modz_ge0 kmax_ge0).
     split; first by apply linear_invariant => //; smt().
     split.
     - apply dr_rep_A => //; smt().
-    - have hB_pos : 0 < B0 N - 19 * k.
-        have hBge := B_ge0 N k hN.
+    - have hB_pos : 0 < B0 N - 19 * ((B0 N - dr (2 * dr N) %% 9) %% 9 + 9 * t).
+        have hBge := B_ge0 N ((B0 N - dr (2 * dr N) %% 9) %% 9 + 9 * t) hN.
         smt(B_ge0 a0_range).
       apply dr_triangle_B => //.
       + smt().
-      + have Heq : (B0 N - 19 * k) %% 9 =
+      + have Heq : (B0 N - 19 * ((B0 N - dr (2 * dr N) %% 9) %% 9 + 9*t)) %% 9 =
                    (B0 N - 19 * ((B0 N - dr (2 * dr N) %% 9) %% 9 + 9*t)) %% 9
           by done.
         rewrite Heq.
@@ -632,13 +649,13 @@ lemma sample_triangle_equiv (N : int) :
 proof.
   move=> hN.
   proc.
-  seq 6 6 : (={a0_val, B0_val, kmax_val, target_dr, target_r, k0}).
+  seq 6 6 : (={anc, bcmp, kbnd, dbl_dr, dbl_mod, kbas}).
   - auto.
   if => />.
   - auto.
-  - seq 1 1 : (={tmax, a0_val, B0_val, k0}).
+  - seq 1 1 : (={tbnd, anc, bcmp, kbas}).
     + auto.
-    + seq 1 1 : (={t, tmax, a0_val, B0_val, k0}).
+    + seq 1 1 : (={ndx, tbnd, anc, bcmp, kbas}).
       * rnd; auto.
       * auto.
 qed.
