@@ -46,6 +46,9 @@
 (*    parse error in `var` declarations in r2024.09.                  *)
 (*  - Module bodies contain no blank lines: blank lines inside a      *)
 (*    procedure body disturb the parser in r2024.09.                  *)
+(*  - A procedure returns exactly once, at the end: vroege `return`   *)
+(*    inside an `if` block is a parse error in r2024.09. The return   *)
+(*    value is accumulated in a local variable `res`.                 *)
 (* ================================================================= *)
 
 require import AllCore Int IntDiv Real Distr List.
@@ -542,6 +545,12 @@ qed.
 (*   tbnd     T-bound        = (kbnd - kbas) %/ 9                     *)
 (*   ndx      Index          = sampled uniform in [0..tbnd]           *)
 (*   kval     K-value        = kbas + 9 * ndx                         *)
+(*   res      Result         = (0, 0) or (anc + 9*kval, bcmp - 19*kval)*)
+(*                                                                    *)
+(* The procedure returns exactly once, at the end, via `res`. Early  *)
+(* returns inside an `if` block are a parse error in EasyCrypt        *)
+(* r2024.09, so the return value is accumulated in `res` and the      *)
+(* single `return res;` sits at the end of the procedure.             *)
 (* ----------------------------------------------------------------- *)
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
@@ -551,7 +560,7 @@ module MRSRep = {
   }
 
   proc sample_triangle(N : int) : int * int = {
-    var anc, bcmp, kbnd, dbl_dr, dbl_mod, kbas, tbnd, ndx, kval;
+    var anc, bcmp, kbnd, dbl_dr, dbl_mod, kbas, tbnd, ndx, kval, res;
     anc <- a0 N;
     bcmp <- B0 N;
     kbnd <- kmax N;
@@ -559,12 +568,14 @@ module MRSRep = {
     dbl_mod <- dbl_dr %% 9;
     kbas <- (bcmp - dbl_mod) %% 9;
     if (kbnd < kbas) {
-      return (0, 0);
+      res <- (0, 0);
+    } else {
+      tbnd <- (kbnd - kbas) %/ 9;
+      ndx <$ [0..tbnd];
+      kval <- kbas + 9 * ndx;
+      res <- (anc + 9 * kval, bcmp - 19 * kval);
     }
-    tbnd <- (kbnd - kbas) %/ 9;
-    ndx <$ [0..tbnd];
-    kval <- kbas + 9 * ndx;
-    return (anc + 9 * kval, bcmp - 19 * kval);
+    return res;
   }
 }.
 
