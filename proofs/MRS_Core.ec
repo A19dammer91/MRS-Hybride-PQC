@@ -582,13 +582,14 @@ qed.
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
     var kvl : int;
-    kvl <$ [0..kmax N];
+    kvl <\$ [0..kmax N];
     return (a0 N + 9 * kvl, B0 N - 19 * kvl);
   }
 
   proc sample_triangle(N : int) : int * int = {
     var res : int * int;
-    var anc, bcp, kbn, ddr, dmod, kbs, tbn, ndx, kvl : int;
+    var anc, bcp, kbn, ddr, dmod : int;
+    var kbs, tbn, ndx, kvl : int;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
@@ -599,7 +600,7 @@ module MRSRep = {
     if (kbn < kbs) {
       res <- (0, 0);
     } else {
-      ndx <$ [0..tbn];
+      ndx <\$ [0..tbn];
       kvl <- kbs + 9 * ndx;
       res <- (anc + 9 * kvl, bcp - 19 * kvl);
     }
