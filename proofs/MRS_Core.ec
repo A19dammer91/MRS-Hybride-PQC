@@ -41,14 +41,19 @@
 (*  - Conjunctive lemmas are bound to a name before splitting:        *)
 (*    `have hrange := L.` followed by `have [..] := hrange.` instead  *)
 (*    of `have [..] := L.` directly.                                  *)
-(*  - Module variable names carry no digits (e.g. no `a0_val`,        *)
-(*    `B0_val`, `k0`, `tmax`): digits inside identifiers trigger a    *)
-(*    parse error in `var` declarations in r2024.09.                  *)
+(*  - Module variable names carry no digits: digits inside identifiers*)
+(*    trigger a parse error in `var` declarations in r2024.09.        *)
 (*  - Module bodies contain no blank lines: blank lines inside a      *)
 (*    procedure body disturb the parser in r2024.09.                  *)
-(*  - A procedure returns exactly once, at the end: vroege `return`   *)
+(*  - A procedure returns exactly once, at the end: early `return`   *)
 (*    inside an `if` block is a parse error in r2024.09. The return   *)
 (*    value is accumulated in a local variable `res`.                 *)
+(*  - The `%/` arithmetic for `tbn` is computed before the `if`       *)
+(*    block, so that the `if` body contains only simple assignments   *)
+(*    and a random sampling. This avoids a parser quirk in r2024.09   *)
+(*    where `%/` inside an `if` body inside a procedure is fragile.   *)
+(*  - Each procedure and each module appears exactly once: duplicate  *)
+(*    definitions trigger a parse error in r2024.09.                  *)
 (* ================================================================= *)
 
 require import AllCore Int IntDiv Real Distr List.
@@ -531,74 +536,54 @@ qed.
 (* ----------------------------------------------------------------- *)
 (* Module for representation sampling                                 *)
 (*                                                                    *)
-(* All module variable names are digit-free (e.g. `anc` instead of   *)
-(* `a0_val`), because digits inside identifiers trigger a parse       *)
-(* error in `var` declarations in EasyCrypt r2024.09.                 *)
+(* All module variable names are digit-free: digits inside           *)
+(* identifiers trigger a parse error in `var` declarations in         *)
+(* EasyCrypt r2024.09.                                                *)
 (*                                                                    *)
 (* Naming convention:                                                 *)
-(*   anc      anchor         = a0 N                                   *)
-(*   bcmp     B-component    = B0 N                                   *)
-(*   kbnd     K-bound        = kmax N                                 *)
-(*   dbl_dr   double dr      = dr (2 * dr N)                          *)
-(*   dbl_mod  dbl_dr mod 9   = dbl_dr %% 9                            *)
-(*   kbas     K-base         = (bcmp - dbl_mod) %% 9                  *)
-(*   tbnd     T-bound        = (kbnd - kbas) %/ 9                     *)
-(*   ndx      Index          = sampled uniform in [0..tbnd]           *)
-(*   kval     K-value        = kbas + 9 * ndx                         *)
-(*   res      Result         = (0, 0) or (anc + 9*kval, bcmp - 19*kval)*)
+(*   anc   anchor         = a0 N                                      *)
+(*   bcp   B-component    = B0 N                                      *)
+(*   kbn   K-bound        = kmax N                                    *)
+(*   ddr   double dr      = dr (2 * dr N)                             *)
+(*   dmod  ddr mod 9      = ddr %% 9                                  *)
+(*   kbs   K-base         = (bcp - dmod) %% 9                         *)
+(*   tbn   T-bound        = (kbn - kbs) %/ 9                          *)
+(*   ndx   Index          = sampled uniform in [0..tbn]               *)
+(*   kvl   K-value        = kbs + 9 * ndx                             *)
+(*   res   Result         = (0, 0) or (anc + 9*kvl, bcp - 19*kvl)     *)
 (*                                                                    *)
 (* The procedure returns exactly once, at the end, via `res`. Early  *)
 (* returns inside an `if` block are a parse error in EasyCrypt        *)
 (* r2024.09, so the return value is accumulated in `res` and the      *)
 (* single `return res;` sits at the end of the procedure.             *)
 (*                                                                    *)
-(* The `var` declaration is split over two lines because a single     *)
-(* long `var` line (10 identifiers) triggers a parse error in         *)
-(* EasyCrypt r2024.09.                                                *)
+(* The `%/` arithmetic for `tbn` is computed before the `if` block,   *)
+(* so that the `if` body contains only simple assignments and a       *)
+(* random sampling. This avoids a parser quirk in r2024.09 where      *)
+(* `%/` inside an `if` body inside a procedure is fragile.            *)
 (* ----------------------------------------------------------------- *)
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
-    var kval;
-    kval <$ [0..kmax N];
-    return (a0 N + 9 * kval, B0 N - 19 * kval);
+    var kvl;
+    kvl <$ [0..kmax N];
+    return (a0 N + 9 * kvl, B0 N - 19 * kvl);
   }
 
   proc sample_triangle(N : int) : int * int = {
-    var anc, bcmp, kbnd, dbl_dr, dbl_mod;
-    var kbas, tbnd, ndx, kval, res;
+    var anc, bcp, kbn, ddr, dmod, kbs, tbn, ndx, kvl, res;
     anc <- a0 N;
-    bcmp <- B0 N;
-    kbnd <- kmax N;
-    dbl_dr <- dr (2 * dr N);
-    dbl_mod <- dbl_dr %% 9;
-    kbas <- (bcmp - dbl_mod) %% 9;
-    if (kbnd < kbas) {
+    bcp <- B0 N;
+    kbn <- kmax N;
+    ddr <- dr (2 * dr N);
+    dmod <- ddr %% 9;
+    kbs <- (bcp - dmod) %% 9;
+    tbn <- (kbn - kbs) %/ 9;
+    if (kbn < kbs) {
       res <- (0, 0);
     } else {
-      tbnd <- (kbnd - kbas) %/ 9;
-      ndx <$ [0..tbnd];
-      kval <- kbas + 9 * ndx;
-      res <- (anc + 9 * kval, bcmp - 19 * kval);
-    }
-    return res;
-  }
-}.
-
-  proc sample_triangle(N : int) : int * int = {
-    var anc, bcmp, kbnd, dbl_dr, dbl_mod, kbas, tbnd, ndx, kval, res;
-    anc <- a0 N;
-    bcmp <- B0 N;
-    kbnd <- kmax N;
-    dbl_dr <- dr (2 * dr N);
-    dbl_mod <- dbl_dr %% 9;
-    kbas <- (bcmp - dbl_mod) %% 9;
-    if (kbnd < kbas) {
-      res <- (0, 0);
-    } else {
-      tbnd <- (kbnd - kbas) %/ 9;
-      ndx <$ [0..tbnd];
-      kval <- kbas + 9 * ndx;
-      res <- (anc + 9 * kval, bcmp - 19 * kval);
+      ndx <$ [0..tbn];
+      kvl <- kbs + 9 * ndx;
+      res <- (anc + 9 * kvl, bcp - 19 * kvl);
     }
     return res;
   }
@@ -622,7 +607,7 @@ proof.
   move=> hN.
   proc.
   auto => />.
-  move=> &m kval hk_lo hk_hi.
+  move=> &m kvl hk_lo hk_hi.
   split.
   - apply linear_invariant => //.
     smt(kmax_ge0).
@@ -636,7 +621,7 @@ lemma sample_basic_equiv (N : int) :
 proof.
   move=> hN.
   proc.
-  seq 1 1 : (={kval}).
+  seq 1 1 : (={kvl}).
   - rnd; auto.
   - auto.
 qed.
@@ -684,13 +669,13 @@ lemma sample_triangle_equiv (N : int) :
 proof.
   move=> hN.
   proc.
-  seq 6 6 : (={anc, bcmp, kbnd, dbl_dr, dbl_mod, kbas}).
+  seq 7 7 : (={anc, bcp, kbn, ddr, dmod, kbs, tbn}).
   - auto.
   if => />.
   - auto.
-  - seq 1 1 : (={tbnd, anc, bcmp, kbas}).
+  - seq 1 1 : (={ndx, tbn, anc, bcp, kbs}).
     + auto.
-    + seq 1 1 : (={ndx, tbnd, anc, bcmp, kbas}).
+    + seq 1 1 : (={kvl, ndx, tbn, anc, bcp, kbs}).
       * rnd; auto.
       * auto.
 qed.
