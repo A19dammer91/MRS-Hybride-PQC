@@ -46,19 +46,23 @@
 (*  - Module variable declarations carry explicit type annotations:   *)
 (*    `var x, y, z : int;`. Without a type annotation the parser      *)
 (*    rejects the declaration in r2024.09.                            *)
-(*  - The result variable of a `int * int` procedure is declared with *)
-(*    type `int * int`, not `int`.                                    *)
+(*  - The result variable of an `int * int` procedure is declared     *)
+(*    last, with type `int * int`, not `int`.                         *)
 (*  - Module bodies contain no blank lines: blank lines inside a      *)
 (*    procedure body disturb the parser in r2024.09.                  *)
 (*  - A procedure returns exactly once, at the end: early `return`   *)
 (*    inside an `if` block is a parse error in r2024.09. The return   *)
 (*    value is accumulated in a local variable `res`.                 *)
+(*  - Random sampling uses `dinter 0 N` rather than the syntactic     *)
+(*    sugar `[0..N]`, which is fragile in r2024.09.                   *)
 (*  - The `%/` arithmetic for `tbn` is computed before the `if`       *)
 (*    block, so that the `if` body contains only simple assignments   *)
 (*    and a random sampling. This avoids a parser quirk in r2024.09   *)
 (*    where `%/` inside an `if` body inside a procedure is fragile.   *)
 (*  - Each procedure and each module appears exactly once: duplicate  *)
 (*    definitions trigger a parse error in r2024.09.                  *)
+(*  - No backslash escape precedes `<$`: the sequence `<\$` is a      *)
+(*    Markdown artefact and is rejected by the parser.                *)
 (* ================================================================= *)
 
 require import AllCore Int IntDiv Real Distr List.
@@ -561,13 +565,15 @@ qed.
 (* MUST carry an explicit type annotation. Without it the parser      *)
 (* rejects the declaration.                                           *)
 (*                                                                    *)
-(* The `var` declaration is split over two lines: a single line with  *)
-(* 10 identifiers (~50 chars) triggers a parse error in r2024.09,     *)
-(* while two lines of 5 identifiers each fit within the parser's      *)
-(* per-line limit.                                                    *)
+(* The `var` declarations are split over two lines: a single line     *)
+(* with many identifiers triggers a parse error in r2024.09, while    *)
+(* two lines of ~5 identifiers each fit within the parser's limit.    *)
 (*                                                                    *)
-(* The result variable `res` has type `int * int`, not `int`,        *)
+(* The result variable `res` is declared last, with type `int * int`, *)
 (* because the procedure returns a pair of integers.                  *)
+(*                                                                    *)
+(* Random sampling uses `dinter 0 N` rather than the syntactic        *)
+(* sugar `[0..N]`, which is fragile in r2024.09.                      *)
 (*                                                                    *)
 (* The procedure returns exactly once, at the end, via `res`. Early  *)
 (* returns inside an `if` block are a parse error in EasyCrypt        *)
@@ -582,14 +588,14 @@ qed.
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
     var kvl : int;
-    kvl <\$ [0..kmax N];
+    kvl <$ dinter 0 (kmax N);
     return (a0 N + 9 * kvl, B0 N - 19 * kvl);
   }
 
   proc sample_triangle(N : int) : int * int = {
-    var res : int * int;
     var anc, bcp, kbn, ddr, dmod : int;
     var kbs, tbn, ndx, kvl : int;
+    var res : int * int;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
@@ -600,7 +606,7 @@ module MRSRep = {
     if (kbn < kbs) {
       res <- (0, 0);
     } else {
-      ndx <\$ [0..tbn];
+      ndx <$ dinter 0 tbn;
       kvl <- kbs + 9 * ndx;
       res <- (anc + 9 * kvl, bcp - 19 * kvl);
     }
