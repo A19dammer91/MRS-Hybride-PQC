@@ -23,8 +23,8 @@
 (*  - `smt(/pred_name)` is NOT used (parse error in r2024.09).        *)
 (*  - `rewrite /pred_name` in a goal is NOT used: in r2024.09 the     *)
 (*    pred is expanded automatically by `move: h.` on a hypothesis.   *)
-(*  - `mulzI` and `ltz_pmod` are NOT used (not available in r2024.09) *)
-(*    injectivity of multiplication by a nonzero constant is         *)
+(*  - `mulzI` and `ltz_pmod` are NOT used (not available in r2024.09).*)
+(*    Injectivity of multiplication by a nonzero constant is         *)
 (*    delegated to `smt()` directly.                                  *)
 (*  - `~` is NOT used for negation: `!` or an explicit implication   *)
 (*    `P => false` is used instead, since `~` triggers a parse error  *)
@@ -44,6 +44,8 @@
 (*  - Module variable names carry no digits (e.g. no `a0_val`,        *)
 (*    `B0_val`, `k0`, `tmax`): digits inside identifiers trigger a    *)
 (*    parse error in `var` declarations in r2024.09.                  *)
+(*  - Module bodies contain no blank lines: blank lines inside a      *)
+(*    procedure body disturb the parser in r2024.09.                  *)
 (* ================================================================= *)
 
 require import AllCore Int IntDiv Real Distr List.
@@ -531,15 +533,15 @@ qed.
 (* error in `var` declarations in EasyCrypt r2024.09.                 *)
 (*                                                                    *)
 (* Naming convention:                                                 *)
-(*   anc      anchor      = a0 N                                      *)
-(*   bcmp     B-component = B0 N                                      *)
-(*   kbnd     K-bound     = kmax N                                    *)
-(*   dbl_dr   double dr   = dr (2 * dr N)                             *)
-(*   dbl_mod  dbl_dr mod 9 = dbl_dr %% 9                              *)
-(*   kbas     K-base      = k0                                        *)
-(*   tbnd     T-bound     = tmax                                      *)
-(*   ndx      index       = t                                         *)
-(*   kval     K-value     = k                                         *)
+(*   anc      anchor         = a0 N                                   *)
+(*   bcmp     B-component    = B0 N                                   *)
+(*   kbnd     K-bound        = kmax N                                 *)
+(*   dbl_dr   double dr      = dr (2 * dr N)                          *)
+(*   dbl_mod  dbl_dr mod 9   = dbl_dr %% 9                            *)
+(*   kbas     K-base         = (bcmp - dbl_mod) %% 9                  *)
+(*   tbnd     T-bound        = (kbnd - kbas) %/ 9                     *)
+(*   ndx      Index          = sampled uniform in [0..tbnd]           *)
+(*   kval     K-value        = kbas + 9 * ndx                         *)
 (* ----------------------------------------------------------------- *)
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
@@ -550,17 +552,17 @@ module MRSRep = {
 
   proc sample_triangle(N : int) : int * int = {
     var anc, bcmp, kbnd, dbl_dr, dbl_mod, kbas, tbnd, ndx, kval;
-    anc     <- a0 N;
-    bcmp    <- B0 N;
-    kbnd    <- kmax N;
-    dbl_dr  <- dr (2 * dr N);
+    anc <- a0 N;
+    bcmp <- B0 N;
+    kbnd <- kmax N;
+    dbl_dr <- dr (2 * dr N);
     dbl_mod <- dbl_dr %% 9;
-    kbas    <- (bcmp - dbl_mod) %% 9;
+    kbas <- (bcmp - dbl_mod) %% 9;
     if (kbnd < kbas) {
       return (0, 0);
     }
     tbnd <- (kbnd - kbas) %/ 9;
-    ndx  <$ [0..tbnd];
+    ndx <$ [0..tbnd];
     kval <- kbas + 9 * ndx;
     return (anc + 9 * kval, bcmp - 19 * kval);
   }
@@ -621,9 +623,10 @@ proof.
     left; split => //.
   - move=> hk0_le t ht_lo ht_hi.
     right.
-    have hk_lo : 0 <= (B0 N - dr (2 * dr N) %% 9) %% 9 + 9 * t by smt(modz_ge0).
-    have hk_hi : (B0 N - dr (2 * dr N) %% 9) %% 9 + 9 * t <= kmax N.
-      smt(modz_ge0 kmax_ge0).
+    have hk_lo : 0 <= (B0 N - dr (2 * dr N) %% 9) %% 9 + 9 * t
+      by smt(modz_ge0).
+    have hk_hi : (B0 N - dr (2 * dr N) %% 9) %% 9 + 9 * t <= kmax N
+      by smt(modz_ge0 kmax_ge0).
     split; first by apply linear_invariant => //; smt().
     split.
     - apply dr_rep_A => //; smt().
@@ -632,11 +635,7 @@ proof.
         smt(B_ge0 a0_range).
       apply dr_triangle_B => //.
       + smt().
-      + have Heq : (B0 N - 19 * ((B0 N - dr (2 * dr N) %% 9) %% 9 + 9*t)) %% 9 =
-                   (B0 N - 19 * ((B0 N - dr (2 * dr N) %% 9) %% 9 + 9*t)) %% 9
-          by done.
-        rewrite Heq.
-        have Heq2 : 19 * (9 * t) %% 9 = 0.
+      + have Heq2 : 19 * (9 * t) %% 9 = 0.
           have Heq3 : 19 * (9 * t) = 9 * (19 * t) by ring.
           by rewrite Heq3 modzMl.
         smt(modzDl modzNm modzMml modz_mod).
