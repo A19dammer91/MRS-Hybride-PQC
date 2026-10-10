@@ -43,6 +43,11 @@
 (*    of `have [..] := L.` directly.                                  *)
 (*  - Module variable names carry no digits: digits inside identifiers*)
 (*    trigger a parse error in `var` declarations in r2024.09.        *)
+(*  - Module variable declarations carry explicit type annotations:   *)
+(*    `var x, y, z : int;`. Without a type annotation the parser      *)
+(*    rejects the declaration in r2024.09.                            *)
+(*  - The result variable of a `int * int` procedure is declared with *)
+(*    type `int * int`, not `int`.                                    *)
 (*  - Module bodies contain no blank lines: blank lines inside a      *)
 (*    procedure body disturb the parser in r2024.09.                  *)
 (*  - A procedure returns exactly once, at the end: early `return`   *)
@@ -552,10 +557,17 @@ qed.
 (*   kvl   K-value        = kbs + 9 * ndx                             *)
 (*   res   Result         = (0, 0) or (anc + 9*kvl, bcp - 19*kvl)     *)
 (*                                                                    *)
+(* Type annotations: in EasyCrypt r2024.09 each `var` declaration     *)
+(* MUST carry an explicit type annotation. Without it the parser      *)
+(* rejects the declaration.                                           *)
+(*                                                                    *)
 (* The `var` declaration is split over two lines: a single line with  *)
 (* 10 identifiers (~50 chars) triggers a parse error in r2024.09,     *)
 (* while two lines of 5 identifiers each fit within the parser's      *)
 (* per-line limit.                                                    *)
+(*                                                                    *)
+(* The result variable `res` has type `int * int`, not `int`,        *)
+(* because the procedure returns a pair of integers.                  *)
 (*                                                                    *)
 (* The procedure returns exactly once, at the end, via `res`. Early  *)
 (* returns inside an `if` block are a parse error in EasyCrypt        *)
@@ -569,15 +581,15 @@ qed.
 (* ----------------------------------------------------------------- *)
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
-    var kvl;
+    var kvl : int;
     kvl <$ [0..kmax N];
     return (a0 N + 9 * kvl, B0 N - 19 * kvl);
   }
 
   proc sample_triangle(N : int) : int * int = {
     var anc, bcp, kbn, ddr, dmod : int;
-    var kbs, tbn, ndx, kvl, res : int;
-
+    var kbs, tbn, ndx, kvl : int;
+    var res : int * int;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
