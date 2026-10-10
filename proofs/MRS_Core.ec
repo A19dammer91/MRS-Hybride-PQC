@@ -490,8 +490,8 @@ proof.
 qed.
 
 lemma frobenius_boundary :
-  (forall (A B : int), ~ is_rep 162 A B) /\
-  (exists (A B : int), is_rep 163 A B).
+  (forall (A B : int), is_rep (162) A B => false) /\
+  (exists (A B : int), is_rep (163) A B).
 proof.
   split.
   - move=> A B.
