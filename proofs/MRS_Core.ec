@@ -642,15 +642,13 @@ module MRSRep = {
     kvl <$ dinter 0 (kmax N);
     return ((a0 N) + (9 * kvl), (B0 N) - (19 * kvl));
   }
-
   proc sample_triangle(N : int) : int * int = {
-    var anc, bcp, kbn, ddr, dmod : int;
-    var kbs, tbn, ndx, kvl : int;
     var res : int * int;
+    var anc, bcp, kbn, ddr, dmod, kbs, tbn, ndx, kvl : int;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
-    ddr <- dr (2 * dr N);
+    ddr <- dr (2 * (dr N));
     dmod <- ddr %% 9;
     kbs <- (bcp - dmod) %% 9;
     tbn <- (kbn - kbs) %/ 9;
@@ -663,7 +661,6 @@ module MRSRep = {
     }
     return res;
   }
-}.
 
 lemma triangle_k0_le_kmax (N : int) :
   162 < N =>
