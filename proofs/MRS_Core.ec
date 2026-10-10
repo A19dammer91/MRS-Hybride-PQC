@@ -551,6 +551,10 @@ qed.
 (* returns inside an `if` block are a parse error in EasyCrypt        *)
 (* r2024.09, so the return value is accumulated in `res` and the      *)
 (* single `return res;` sits at the end of the procedure.             *)
+(*                                                                    *)
+(* The `var` declaration is split over two lines because a single     *)
+(* long `var` line (10 identifiers) triggers a parse error in         *)
+(* EasyCrypt r2024.09.                                                *)
 (* ----------------------------------------------------------------- *)
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
@@ -558,6 +562,27 @@ module MRSRep = {
     kval <$ [0..kmax N];
     return (a0 N + 9 * kval, B0 N - 19 * kval);
   }
+
+  proc sample_triangle(N : int) : int * int = {
+    var anc, bcmp, kbnd, dbl_dr, dbl_mod;
+    var kbas, tbnd, ndx, kval, res;
+    anc <- a0 N;
+    bcmp <- B0 N;
+    kbnd <- kmax N;
+    dbl_dr <- dr (2 * dr N);
+    dbl_mod <- dbl_dr %% 9;
+    kbas <- (bcmp - dbl_mod) %% 9;
+    if (kbnd < kbas) {
+      res <- (0, 0);
+    } else {
+      tbnd <- (kbnd - kbas) %/ 9;
+      ndx <$ [0..tbnd];
+      kval <- kbas + 9 * ndx;
+      res <- (anc + 9 * kval, bcmp - 19 * kval);
+    }
+    return res;
+  }
+}.
 
   proc sample_triangle(N : int) : int * int = {
     var anc, bcmp, kbnd, dbl_dr, dbl_mod, kbas, tbnd, ndx, kval, res;
