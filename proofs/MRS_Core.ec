@@ -552,6 +552,11 @@ qed.
 (*   kvl   K-value        = kbs + 9 * ndx                             *)
 (*   res   Result         = (0, 0) or (anc + 9*kvl, bcp - 19*kvl)     *)
 (*                                                                    *)
+(* The `var` declaration is split over two lines: a single line with  *)
+(* 10 identifiers (~50 chars) triggers a parse error in r2024.09,     *)
+(* while two lines of 5 identifiers each fit within the parser's      *)
+(* per-line limit.                                                    *)
+(*                                                                    *)
 (* The procedure returns exactly once, at the end, via `res`. Early  *)
 (* returns inside an `if` block are a parse error in EasyCrypt        *)
 (* r2024.09, so the return value is accumulated in `res` and the      *)
@@ -570,7 +575,8 @@ module MRSRep = {
   }
 
   proc sample_triangle(N : int) : int * int = {
-    var anc, bcp, kbn, ddr, dmod, kbs, tbn, ndx, kvl, res;
+    var anc, bcp, kbn, ddr, dmod;
+    var kbs, tbn, ndx, kvl, res;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
