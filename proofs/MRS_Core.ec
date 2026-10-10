@@ -587,9 +587,8 @@ module MRSRep = {
   }
 
   proc sample_triangle(N : int) : int * int = {
-    var anc, bcp, kbn, ddr, dmod : int;
-    var kbs, tbn, ndx, kvl : int;
     var res : int * int;
+    var anc, bcp, kbn, ddr, dmod, kbs, tbn, ndx, kvl : int;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
