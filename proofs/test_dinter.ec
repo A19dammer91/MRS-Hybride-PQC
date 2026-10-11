@@ -1,3 +1,6 @@
 require import AllCore.
 
-print dbool.
+print Distr.dbool.
+print Distr.dunit.
+print Distr.dmap.
+print Distr.dinter.
