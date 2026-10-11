@@ -614,12 +614,11 @@ module MRSRep = {
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
-    ndx <$ dinter [0..(if (kbn < kbs N) then 0 else tbn N)];
+    ndx <$ dinter 0 (if (kbn < kbs N) then 0 else tbn N);
     kvl <- (kbs N) + 9 * ndx;
     return (if (kbn < kbs N) then (0, 0)
             else ((anc + (9 * kvl)), (bcp - (19 * kvl))));
   }
-}.
 
 lemma triangle_k0_le_kmax (N : int) :
   162 < N =>
