@@ -1,9 +1,13 @@
 require import AllCore IntDiv.
 
-print dunif.
-print dunit.
+require import Distr.
+require import Top.Distr.
+require import DBool.
+require import DInterval.
+require import StdDistr.
+
 print dbool.
+print dunit.
 print dmap.
 print dinter.
-print drange.
-print dinterval.
+print dunif.
