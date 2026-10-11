@@ -108,6 +108,7 @@ jobs:
           for f in \
               MRS_FloorSum.ec \
               MRS_DigitSum.ec \
+              test_dinter.ec \
               MRS_Core.ec \
               MRS_Encoding.ec \
               MRS_Chain.ec \
