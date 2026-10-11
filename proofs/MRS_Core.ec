@@ -11,7 +11,7 @@
 (*  and the anchor satisfies:                                         *)
 (*      a0 N = N %% 9      if N %% 9 <> 0                             *)
 (*      a0 N = 9           if N %% 9 = 0                              *)
-(*  so in all cases a0 N ≡ N (mod 9) and 1 <= a0 N <= 9.              *)
+(*  so in all cases a0 N = N (mod 9) and 1 <= a0 N <= 9.              *)
 (*                                                                    *)
 (*  Axiom baseline: 0.                                                *)
 (*                                                                    *)
@@ -61,11 +61,10 @@
 (*    where `%/` inside an `if` body inside a procedure is fragile.   *)
 (*  - Each procedure and each module appears exactly once: duplicate  *)
 (*    definitions trigger a parse error in r2024.09.                  *)
-(*  - No backslash escape precedes `<$`: the sequence `<\$` is a      *)
-(*    Markdown artefact and is rejected by the parser.                *)
-(*  - Redundant parentheses are used around compound arithmetic       *)
-(*    sub-expressions, to make operator precedence explicit and to    *)
-(*    avoid parser ambiguities between `*`, `+`, `-`, `%%`, `%/`.     *)
+(*  - Whitespace uses spaces only, never tabs. Exactly two spaces     *)
+(*    indent a `proc` inside a `module`, four spaces indent a `var`   *)
+(*    or an assignment inside a `proc`, six spaces indent statements  *)
+(*    inside an `if` or `else` body.                                  *)
 (* ================================================================= *)
 
 require import AllCore Int IntDiv Real Distr List.
@@ -74,20 +73,6 @@ import IntOrder.
 
 (* ----------------------------------------------------------------- *)
 (* Digital root                                                       *)
-(*                                                                    *)
-(* The digital root of a positive integer N is defined as:            *)
-(*                                                                    *)
-(*     dr(N) = 1 + ((N - 1) %% 9)      if N > 0                       *)
-(*     dr(N) = 0                       if N <= 0                      *)
-(*                                                                    *)
-(* The anchor A_0 of the MRS representation is dr(N). Its range is    *)
-(* 1..9 for N > 0, and it is never 0. Consequently A = 0 is not a     *)
-(* valid start for a representation, and the largest non-represent-   *)
-(* able N under the Positive Anchor Convention is 162.                *)
-(*                                                                    *)
-(* Note on parentheses: `1 + ((N - 1) %% 9)` is written with the      *)
-(* inner parentheses around `(N - 1)` and around the whole `%%`       *)
-(* sub-expression to make the precedence of `+` over `%%` explicit.   *)
 (* ----------------------------------------------------------------- *)
 op dr (n : int) : int =
   if (n <= 0) then 0 else (1 + (((n - 1)) %% 9)).
@@ -178,24 +163,6 @@ qed.
 
 (* ----------------------------------------------------------------- *)
 (* Positive Anchor Convention                                        *)
-(*                                                                    *)
-(* The anchor A_0 = dr(N) lies in 1..9 and satisfies                  *)
-(* A_0 ≡ N (mod 9). From it the B-component is derived as:            *)
-(*                                                                    *)
-(*     B0(N) = (N - 19 * A_0) / 9                                     *)
-(*                                                                    *)
-(* and the upper bound for the correction counter k is                *)
-(*                                                                    *)
-(*     kmax(N) = B0(N) / 19                                           *)
-(*                                                                    *)
-(* The identities below are the foundation of the MRS-AUTH            *)
-(* representation N = 19 * A + 9 * B under the Positive Anchor        *)
-(* Convention.                                                        *)
-(*                                                                    *)
-(* Note on parentheses: every product `19 * a0 N`, `9 * B0 N`, and    *)
-(* `19 * a0 N + 9 * B0 N` is written with explicit parentheses        *)
-(* around compound sub-expressions so that the parser can             *)
-(* unambiguously resolve the operator precedence between `*` and `+`. *)
 (* ----------------------------------------------------------------- *)
 op a0 (N : int) : int = dr N.
 op B0 (N : int) : int = (((N - (19 * (a0 N)))) %/ 9).
@@ -581,7 +548,7 @@ qed.
 (* ----------------------------------------------------------------- *)
 (* Module for representation sampling                                 *)
 (*                                                                    *)
-(* Naming convention (all names are 3 characters, digit-free):        *)
+(* All module variable names are digit-free and 3 characters long:    *)
 (*   anc   anchor         = a0 N                                      *)
 (*   bcp   B-component    = B0 N                                      *)
 (*   kbn   K-bound        = kmax N                                    *)
@@ -593,48 +560,14 @@ qed.
 (*   kvl   K-value        = kbs + 9 * ndx                             *)
 (*   res   Result         = (0, 0) or (anc + 9*kvl, bcp - 19*kvl)     *)
 (*                                                                    *)
-(* Arithmetic details:                                                *)
+(* Each var declaration carries an explicit type annotation. The      *)
+(* result variable res is declared last with type int * int. The      *)
+(* procedure returns exactly once, at the end.                        *)
 (*                                                                    *)
-(*   The linear form `N = 19 * A + 9 * B` has two coefficients:       *)
-(*   `19` for the anchor A and `9` for the B-component. Both          *)
-(*   coefficients are written as explicit integer literals `19` and   *)
-(*   `9`, and every product is parenthesised as `19 * x` or `9 * x`   *)
-(*   so that the parser resolves the operator precedence between      *)
-(*   `*` and `+` unambiguously. The expression `anc + 9 * kvl` is     *)
-(*   read as `anc + (9 * kvl)`, and `bcp - 19 * kvl` as              *)
-(*   `bcp - (19 * kvl)`. Parentheses are only added where the        *)
-(*   precedence would otherwise be ambiguous.                         *)
-(*                                                                    *)
-(*   The `dr` function is defined as                                  *)
-(*       dr(N) = if N <= 0 then 0 else 1 + ((N - 1) %% 9)             *)
-(*   and appears in the module via `ddr <- dr (2 * dr N)` and via     *)
-(*   the implicit calls `a0 N` (which is `dr N`) and `kmax N`. The    *)
-(*   inner `2 * dr N` is parenthesised as `(2 * dr N)` because the    *)
-(*   multiplication binds tighter than the outer `dr` application.    *)
-(*                                                                    *)
-(* Type annotations: in EasyCrypt r2024.09 each `var` declaration     *)
-(* MUST carry an explicit type annotation. Without it the parser      *)
-(* rejects the declaration.                                           *)
-(*                                                                    *)
-(* The `var` declarations are split over two lines: a single line     *)
-(* with many identifiers triggers a parse error in r2024.09, while    *)
-(* two lines of ~5 identifiers each fit within the parser's limit.    *)
-(*                                                                    *)
-(* The result variable `res` is declared last, with type `int * int`, *)
-(* because the procedure returns a pair of integers.                  *)
-(*                                                                    *)
-(* Random sampling uses `dinter 0 N` rather than the syntactic        *)
-(* sugar `[0..N]`, which is fragile in r2024.09.                      *)
-(*                                                                    *)
-(* The procedure returns exactly once, at the end, via `res`. Early  *)
-(* returns inside an `if` block are a parse error in EasyCrypt        *)
-(* r2024.09, so the return value is accumulated in `res` and the      *)
-(* single `return res;` sits at the end of the procedure.             *)
-(*                                                                    *)
-(* The `%/` arithmetic for `tbn` is computed before the `if` block,   *)
-(* so that the `if` body contains only simple assignments and a       *)
-(* random sampling. This avoids a parser quirk in r2024.09 where      *)
-(* `%/` inside an `if` body inside a procedure is fragile.            *)
+(* Whitespace: two spaces indent a proc inside the module, four       *)
+(* spaces indent a var or an assignment inside a proc, six spaces     *)
+(* indent a statement inside an if or else body. Tabs are never       *)
+(* used.                                                              *)
 (* ----------------------------------------------------------------- *)
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
@@ -642,9 +575,11 @@ module MRSRep = {
     kvl <$ dinter 0 (kmax N);
     return ((a0 N) + (9 * kvl), (B0 N) - (19 * kvl));
   }
+
   proc sample_triangle(N : int) : int * int = {
+    var anc, bcp, kbn, ddr, dmod : int;
+    var kbs, tbn, ndx, kvl : int;
     var res : int * int;
-    var anc, bcp, kbn, ddr, dmod, kbs, tbn, ndx, kvl : int;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
@@ -661,6 +596,7 @@ module MRSRep = {
     }
     return res;
   }
+}.
 
 lemma triangle_k0_le_kmax (N : int) :
   162 < N =>
