@@ -46,25 +46,25 @@
 (*  - Module variable declarations carry explicit type annotations:   *)
 (*    `var x, y, z : int;`. Without a type annotation the parser      *)
 (*    rejects the declaration in r2024.09.                            *)
-(*  - The result variable of an `int * int` procedure is declared     *)
-(*    last, with type `int * int`, not `int`.                         *)
 (*  - Module bodies contain no blank lines: blank lines inside a      *)
 (*    procedure body disturb the parser in r2024.09.                  *)
-(*  - A procedure returns exactly once, at the end: early `return`   *)
-(*    inside an `if` block is a parse error in r2024.09. The return   *)
-(*    value is accumulated in a local variable `res`.                 *)
 (*  - Random sampling uses `dinter 0 N` rather than the syntactic     *)
 (*    sugar `[0..N]`, which is fragile in r2024.09.                   *)
 (*  - The `%/` arithmetic for `tbn` is computed before the `if`       *)
-(*    block, so that the `if` body contains only simple assignments   *)
-(*    and a random sampling. This avoids a parser quirk in r2024.09   *)
-(*    where `%/` inside an `if` body inside a procedure is fragile.   *)
+(*    expression, so that no `%/` appears inside a conditional.       *)
+(*  - The conditional result of `sample_triangle` is expressed as an  *)
+(*    `if ... then ... else ...` expression in the return statement,  *)
+(*    not as an `if ... { return ... } else { ... }` statement with   *)
+(*    two early returns. Early returns in an `if` block are a parse   *)
+(*    error in r2024.09; an `if`-expression in a `return` is safe.    *)
+(*  - The sampling `dinter 0 (if ... then 0 else tbn)` uses a         *)
+(*    singleton distribution when the branch is degenerate, so that   *)
+(*    the sample is well-defined on both branches.                    *)
 (*  - Each procedure and each module appears exactly once: duplicate  *)
 (*    definitions trigger a parse error in r2024.09.                  *)
 (*  - Whitespace uses spaces only, never tabs. Exactly two spaces     *)
 (*    indent a `proc` inside a `module`, four spaces indent a `var`   *)
-(*    or an assignment inside a `proc`, six spaces indent statements  *)
-(*    inside an `if` or `else` body.                                  *)
+(*    or an assignment inside a `proc`.                               *)
 (* ================================================================= *)
 
 require import AllCore Int IntDiv Real Distr List.
@@ -548,7 +548,7 @@ qed.
 (* ----------------------------------------------------------------- *)
 (* Module for representation sampling                                 *)
 (*                                                                    *)
-(* All module variable names are digit-free and 3 characters long:    *)
+(* Variable names (3 characters, digit-free):                         *)
 (*   anc   anchor         = a0 N                                      *)
 (*   bcp   B-component    = B0 N                                      *)
 (*   kbn   K-bound        = kmax N                                    *)
@@ -558,16 +558,19 @@ qed.
 (*   tbn   T-bound        = (kbn - kbs) %/ 9                          *)
 (*   ndx   Index          = sampled uniform in [0..tbn]               *)
 (*   kvl   K-value        = kbs + 9 * ndx                             *)
-(*   res   Result         = (0, 0) or (anc + 9*kvl, bcp - 19*kvl)     *)
 (*                                                                    *)
-(* Each var declaration carries an explicit type annotation. The      *)
-(* result variable res is declared last with type int * int. The      *)
-(* procedure returns exactly once, at the end.                        *)
+(* Two var declarations per procedure: `var a, b, c : int;` for the   *)
+(* integer locals, and `var res : int * int;` for the result only     *)
+(* when needed. The result is returned directly as an `if ... then`   *)
+(* `... else ...` expression, so no `res` variable is required.       *)
 (*                                                                    *)
-(* Whitespace: two spaces indent a proc inside the module, four       *)
-(* spaces indent a var or an assignment inside a proc, six spaces     *)
-(* indent a statement inside an if or else body. Tabs are never       *)
-(* used.                                                              *)
+(* The sampling `dinter 0 (if (kbn < kbs) then 0 else tbn)` uses a    *)
+(* singleton distribution when the branch is degenerate, so that the  *)
+(* sample is well-defined on both branches.                           *)
+(*                                                                    *)
+(* Whitespace: two spaces indent a `proc` inside the module, four     *)
+(* spaces indent a `var` or an assignment inside a `proc`. Tabs are   *)
+(* never used.                                                        *)
 (* ----------------------------------------------------------------- *)
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
@@ -579,7 +582,6 @@ module MRSRep = {
   proc sample_triangle(N : int) : int * int = {
     var anc, bcp, kbn, ddr, dmod : int;
     var kbs, tbn, ndx, kvl : int;
-    var res : int * int;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
@@ -587,14 +589,10 @@ module MRSRep = {
     dmod <- ddr %% 9;
     kbs <- (bcp - dmod) %% 9;
     tbn <- (kbn - kbs) %/ 9;
-    if (kbn < kbs) {
-      res <- (0, 0);
-    } else {
-      ndx <$ dinter 0 tbn;
-      kvl <- kbs + 9 * ndx;
-      res <- ((anc + (9 * kvl)), (bcp - (19 * kvl)));
-    }
-    return res;
+    ndx <$ dinter 0 (if (kbn < kbs) then 0 else tbn);
+    kvl <- kbs + 9 * ndx;
+    return (if (kbn < kbs) then (0, 0)
+            else ((anc + (9 * kvl)), (bcp - (19 * kvl))));
   }
 }.
 
