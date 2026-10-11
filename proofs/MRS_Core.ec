@@ -605,20 +605,31 @@ qed.
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
     var kvl : int;
-    kvl <$ dinter [0..kmax N];
-    return ((a0 N) + (9 * kvl), (B0 N) - (19 * kvl));
+    kvl <$ dinter 0 (kmax N);
+    return (a0 N + 9 * kvl, B0 N - 19 * kvl);
   }
 
   proc sample_triangle(N : int) : int * int = {
-    var anc, bcp, kbn, ndx, kvl : int;
+    var res : int * int;
+    var anc, bcp, kbn, ddr, dmod : int;
+    var kbs, tbn, ndx, kvl : int;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
-    ndx <$ dinter 0 (if (kbn < kbs N) then 0 else tbn N);
-    kvl <- (kbs N) + 9 * ndx;
-    return (if (kbn < kbs N) then (0, 0)
-            else ((anc + (9 * kvl)), (bcp - (19 * kvl))));
+    ddr <- dr (2 * dr N);
+    dmod <- ddr %% 9;
+    kbs <- (bcp - dmod) %% 9;
+    tbn <- (kbn - kbs) %/ 9;
+    if (kbn < kbs) {
+      res <- (0, 0);
+    } else {
+      ndx <$ dinter 0 tbn;
+      kvl <- kbs + 9 * ndx;
+      res <- (anc + 9 * kvl, bcp - 19 * kvl);
+    }
+    return res;
   }
+}.
 
 lemma triangle_k0_le_kmax (N : int) :
   162 < N =>
