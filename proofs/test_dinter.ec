@@ -1,3 +1,3 @@
-require import AllCore IntDistr.
+require import AllCore IntDiv Distr.
 
 print dinter.
