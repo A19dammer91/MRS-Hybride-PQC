@@ -48,11 +48,14 @@
 (*    rejects the declaration in r2024.09.                            *)
 (*  - Module bodies contain no blank lines: blank lines inside a      *)
 (*    procedure body disturb the parser in r2024.09.                  *)
-(*  - Random sampling uses the syntactic sugar `[0..N]`, which is     *)
-(*    accepted by the parser in r2024.09. The `dinter` operator has   *)
-(*    a signature that does not accept either `int -> int -> int` or  *)
-(*    `(int * int) -> int` in this release, so the `[0..N]` sugar is  *)
-(*    the portable form.                                              *)
+(*  - Random sampling uses the discrete-interval operator `dinter`    *)
+(*    applied to an explicit interval value. In r2024.09 the operator *)
+(*    `dinter` has signature `DInterval.t -> int distr`, so the       *)
+(*    interval `[0..N]` is passed as a single argument, not as two    *)
+(*    separate integers. The interval `[0..N]` is inclusive on both   *)
+(*    endpoints: it denotes `{0, 1, ..., N}`. The sugar `kvl <$ [0..N] *)
+(*    is internally rewritten to `dinter 0 N` and fails in this       *)
+(*    release, so we call `dinter [0..N]` explicitly.                 *)
 (*  - The `%%` and `%/` operators are NOT used inside a procedure     *)
 (*    body. All modular and division arithmetic is placed inside      *)
 (*    top-level `op` definitions. The procedure body contains only    *)
@@ -64,7 +67,7 @@
 (*    not as an `if ... { return ... } else { ... }` statement with   *)
 (*    two early returns. Early returns in an `if` block are a parse   *)
 (*    error in r2024.09; an `if`-expression in a `return` is safe.    *)
-(*  - The sampling `[0..(if ... then 0 else tbn N)]` uses a          *)
+(*  - The sampling `dinter [0..(if ... then 0 else tbn N)]` uses a    *)
 (*    singleton distribution when the branch is degenerate, so that   *)
 (*    the sample is well-defined on both branches.                    *)
 (*  - Each procedure and each module appears exactly once: duplicate  *)
@@ -586,10 +589,11 @@ qed.
 (* ddr, dmod, kbs, tbn above. The procedure body contains only        *)
 (* assignments and a return statement.                                *)
 (*                                                                    *)
-(* Random sampling uses the syntactic sugar `[0..N]`, which is        *)
-(* accepted by the parser in r2024.09. The `dinter` operator does     *)
-(* not have a signature that accepts either `int -> int -> int` or    *)
-(* `(int * int) -> int` in this release.                              *)
+(* Random sampling uses `dinter [0..N]` with an explicit interval     *)
+(* argument. The interval `[0..N]` is inclusive on both endpoints:    *)
+(* it denotes `{0, 1, ..., N}`. The sugar `kvl <$ [0..N]` is          *)
+(* internally rewritten to `dinter 0 N` and fails in r2024.09, so     *)
+(* we call `dinter [0..N]` explicitly.                                *)
 (*                                                                    *)
 (* The result of sample_triangle is returned as an `if ... then ...   *)
 (* else ...` expression.                                              *)
@@ -601,7 +605,7 @@ qed.
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
     var kvl : int;
-    kvl <$ [0..kmax N];
+    kvl <$ dinter [0..kmax N];
     return ((a0 N) + (9 * kvl), (B0 N) - (19 * kvl));
   }
 
@@ -610,7 +614,7 @@ module MRSRep = {
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
-    ndx <$ [0..(if (kbn < kbs N) then 0 else tbn N)];
+    ndx <$ dinter [0..(if (kbn < kbs N) then 0 else tbn N)];
     kvl <- (kbs N) + 9 * ndx;
     return (if (kbn < kbs N) then (0, 0)
             else ((anc + (9 * kvl)), (bcp - (19 * kvl))));
