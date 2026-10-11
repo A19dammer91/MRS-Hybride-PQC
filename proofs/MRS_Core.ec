@@ -50,14 +50,18 @@
 (*    procedure body disturb the parser in r2024.09.                  *)
 (*  - Random sampling uses `dinter 0 N` rather than the syntactic     *)
 (*    sugar `[0..N]`, which is fragile in r2024.09.                   *)
-(*  - The `%/` arithmetic for `tbn` is computed before the `if`       *)
-(*    expression, so that no `%/` appears inside a conditional.       *)
+(*  - The `%%` and `%/` operators are NOT used inside a procedure     *)
+(*    body. All modular and division arithmetic is placed inside      *)
+(*    top-level `op` definitions. The procedure body contains only    *)
+(*    simple assignments and a return statement. This avoids the      *)
+(*    parser quirk in r2024.09 where `%%` inside an assignment in a   *)
+(*    procedure is fragile.                                           *)
 (*  - The conditional result of `sample_triangle` is expressed as an  *)
 (*    `if ... then ... else ...` expression in the return statement,  *)
 (*    not as an `if ... { return ... } else { ... }` statement with   *)
 (*    two early returns. Early returns in an `if` block are a parse   *)
 (*    error in r2024.09; an `if`-expression in a `return` is safe.    *)
-(*  - The sampling `dinter 0 (if ... then 0 else tbn)` uses a         *)
+(*  - The sampling `dinter 0 (if ... then 0 else tbn N)` uses a       *)
 (*    singleton distribution when the branch is degenerate, so that   *)
 (*    the sample is well-defined on both branches.                    *)
 (*  - Each procedure and each module appears exactly once: duplicate  *)
@@ -167,6 +171,27 @@ qed.
 op a0 (N : int) : int = dr N.
 op B0 (N : int) : int = (((N - (19 * (a0 N)))) %/ 9).
 op kmax (N : int) : int = ((B0 N) %/ 19).
+
+(* ----------------------------------------------------------------- *)
+(* Derived quantities for the MRS representation                     *)
+(*                                                                    *)
+(* The quantities ddr, dmod, kbs, tbn are defined here as top-level   *)
+(* `op`s rather than as local variables inside the sampling           *)
+(* procedure. The reason is that in EasyCrypt r2024.09 the operators  *)
+(* `%%` and `%/` are fragile when they appear inside a procedure-     *)
+(* level assignment. By contrast, `%%` and `%/` inside a top-level    *)
+(* `op` definition parse without issue. The procedure body is thus    *)
+(* reduced to simple assignments and a single return statement.       *)
+(*                                                                    *)
+(*   ddr(N) = dr(2 * dr(N))                                           *)
+(*   dmod(N) = ddr(N) %% 9                                            *)
+(*   kbs(N) = (B0(N) - dmod(N)) %% 9                                  *)
+(*   tbn(N) = (kmax(N) - kbs(N)) %/ 9                                 *)
+(* ----------------------------------------------------------------- *)
+op ddr (N : int) : int = dr (2 * (dr N)).
+op dmod (N : int) : int = (ddr N) %% 9.
+op kbs (N : int) : int = ((B0 N) - (dmod N)) %% 9.
+op tbn (N : int) : int = ((kmax N) - (kbs N)) %/ 9.
 
 (* ----------------------------------------------------------------- *)
 (* Auxiliary lemmas about a0 and B0                                   *)
@@ -549,24 +574,20 @@ qed.
 (* Module for representation sampling                                 *)
 (*                                                                    *)
 (* Variable names (3 characters, digit-free):                         *)
-(*   anc   anchor         = a0 N                                      *)
-(*   bcp   B-component    = B0 N                                      *)
-(*   kbn   K-bound        = kmax N                                    *)
-(*   ddr   double dr      = dr (2 * dr N)                             *)
-(*   dmod  ddr mod 9      = ddr %% 9                                  *)
-(*   kbs   K-base         = (bcp - dmod) %% 9                         *)
-(*   tbn   T-bound        = (kbn - kbs) %/ 9                          *)
-(*   ndx   Index          = sampled uniform in [0..tbn]               *)
-(*   kvl   K-value        = kbs + 9 * ndx                             *)
+(*   anc   anchor      = a0 N                                         *)
+(*   bcp   B-component = B0 N                                         *)
+(*   kbn   K-bound     = kmax N                                       *)
+(*   ndx   Index       = sampled uniform in [0..tbn N]                *)
+(*   kvl   K-value     = (kbs N) + 9 * ndx                            *)
 (*                                                                    *)
-(* Two var declarations per procedure: `var a, b, c : int;` for the   *)
-(* integer locals, and `var res : int * int;` for the result only     *)
-(* when needed. The result is returned directly as an `if ... then`   *)
-(* `... else ...` expression, so no `res` variable is required.       *)
+(* All modular and division arithmetic is in the top-level ops        *)
+(* ddr, dmod, kbs, tbn above. The procedure body contains only        *)
+(* assignments and a return statement.                                *)
 (*                                                                    *)
-(* The sampling `dinter 0 (if (kbn < kbs) then 0 else tbn)` uses a    *)
-(* singleton distribution when the branch is degenerate, so that the  *)
-(* sample is well-defined on both branches.                           *)
+(* The result of sample_triangle is returned as an `if ... then ...   *)
+(* else ...` expression. The sampling `dinter 0 (if (kbn < kbs N)     *)
+(* then 0 else tbn N)` is defined on both branches: when the          *)
+(* condition holds, the distribution is the singleton `dinter 0 0`.   *)
 (*                                                                    *)
 (* Whitespace: two spaces indent a `proc` inside the module, four     *)
 (* spaces indent a `var` or an assignment inside a `proc`. Tabs are   *)
@@ -580,18 +601,13 @@ module MRSRep = {
   }
 
   proc sample_triangle(N : int) : int * int = {
-    var anc, bcp, kbn, ddr, dmod : int;
-    var kbs, tbn, ndx, kvl : int;
+    var anc, bcp, kbn, ndx, kvl : int;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
-    ddr <- dr (2 * (dr N));
-    dmod <- ddr %% 9;
-    kbs <- (bcp - dmod) %% 9;
-    tbn <- (kbn - kbs) %/ 9;
-    ndx <$ dinter 0 (if (kbn < kbs) then 0 else tbn);
-    kvl <- kbs + 9 * ndx;
-    return (if (kbn < kbs) then (0, 0)
+    ndx <$ dinter 0 (if (kbn < kbs N) then 0 else tbn N);
+    kvl <- (kbs N) + 9 * ndx;
+    return (if (kbn < kbs N) then (0, 0)
             else ((anc + (9 * kvl)), (bcp - (19 * kvl))));
   }
 }.
@@ -676,13 +692,11 @@ lemma sample_triangle_equiv (N : int) :
 proof.
   move=> hN.
   proc.
-  seq 7 7 : (={anc, bcp, kbn, ddr, dmod, kbs, tbn}).
+  seq 3 3 : (={anc, bcp, kbn}).
   - auto.
-  if => />.
-  - auto.
-  - seq 1 1 : (={ndx, tbn, anc, bcp, kbs}).
+  seq 1 1 : (={ndx, anc, bcp, kbn}).
+  - rnd; auto.
+  - seq 1 1 : (={kvl, ndx, anc, bcp, kbn}).
     + auto.
-    + seq 1 1 : (={kvl, ndx, tbn, anc, bcp, kbs}).
-      * rnd; auto.
-      * auto.
+    + auto.
 qed.
