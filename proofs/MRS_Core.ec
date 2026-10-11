@@ -48,28 +48,23 @@
 (*    rejects the declaration in r2024.09.                            *)
 (*  - Module bodies contain no blank lines: blank lines inside a      *)
 (*    procedure body disturb the parser in r2024.09.                  *)
-(*  - Random sampling uses the discrete-interval operator `dinter`    *)
-(*    applied to an explicit interval value. In r2024.09 the operator *)
-(*    `dinter` has signature `DInterval.t -> int distr`, so the       *)
-(*    interval `[0..N]` is passed as a single argument, not as two    *)
-(*    separate integers. The interval `[0..N]` is inclusive on both   *)
-(*    endpoints: it denotes `{0, 1, ..., N}`. The sugar `kvl <$ [0..N] *)
-(*    is internally rewritten to `dinter 0 N` and fails in this       *)
-(*    release, so we call `dinter [0..N]` explicitly.                 *)
+(*  - Module `var` lines are kept short (at most 5 identifiers per    *)
+(*    line). A single `var` line with 9 identifiers (around 50 chars) *)
+(*    triggers a parse error in r2024.09.                             *)
+(*  - Random sampling uses `dinter` applied to a value produced by a  *)
+(*    top-level `op` definition, not a direct call to `dinter` inside *)
+(*    the procedure body. The reason is that in r2024.09 a direct    *)
+(*    call to `dinter` inside a procedure assignment triggers a       *)
+(*    "no matching operator" error, while the same call inside a      *)
+(*    top-level `op` definition parses without issue. The distribution*)
+(*    is therefore defined once and for all as a top-level `op` and   *)
+(*    only referenced by name inside the procedure.                   *)
 (*  - The `%%` and `%/` operators are NOT used inside a procedure     *)
 (*    body. All modular and division arithmetic is placed inside      *)
-(*    top-level `op` definitions. The procedure body contains only    *)
-(*    simple assignments and a return statement. This avoids the      *)
-(*    parser quirk in r2024.09 where `%%` inside an assignment in a   *)
-(*    procedure is fragile.                                           *)
-(*  - The conditional result of `sample_triangle` is expressed as an  *)
-(*    `if ... then ... else ...` expression in the return statement,  *)
-(*    not as an `if ... { return ... } else { ... }` statement with   *)
-(*    two early returns. Early returns in an `if` block are a parse   *)
-(*    error in r2024.09; an `if`-expression in a `return` is safe.    *)
-(*  - The sampling `dinter [0..(if ... then 0 else tbn N)]` uses a    *)
-(*    singleton distribution when the branch is degenerate, so that   *)
-(*    the sample is well-defined on both branches.                    *)
+(*    top-level `op` definitions.                                     *)
+(*  - The conditional upper bound of `sample_triangle` is computed    *)
+(*    first into a local variable `tmx`, so that the sampling syntax  *)
+(*    `[0..tmx]` sees only a variable, not a compound expression.     *)
 (*  - Each procedure and each module appears exactly once: duplicate  *)
 (*    definitions trigger a parse error in r2024.09.                  *)
 (*  - Whitespace uses spaces only, never tabs. Exactly two spaces     *)
@@ -197,6 +192,22 @@ op ddr (N : int) : int = dr (2 * (dr N)).
 op dmod (N : int) : int = (ddr N) %% 9.
 op kbs (N : int) : int = ((B0 N) - (dmod N)) %% 9.
 op tbn (N : int) : int = ((kmax N) - (kbs N)) %/ 9.
+
+(* ----------------------------------------------------------------- *)
+(* Distribution ops for the sampling procedures                      *)
+(*                                                                    *)
+(* In EasyCrypt r2024.09 a direct call to `dinter` inside a procedure *)
+(* assignment triggers "no matching operator". The same call inside   *)
+(* a top-level `op` definition parses without issue. The interval     *)
+(* distributions used by the sampling procedures are therefore        *)
+(* defined here once and for all, and are referenced only by name     *)
+(* inside the procedure.                                              *)
+(*                                                                    *)
+(* Both distributions are over the inclusive interval from 0 to the   *)
+(* given upper bound.                                                 *)
+(* ----------------------------------------------------------------- *)
+op dist_kmax (N : int) : int distr = dinter 0 (kmax N).
+op dist_tbn (N : int) : int distr = dinter 0 (tbn N).
 
 (* ----------------------------------------------------------------- *)
 (* Auxiliary lemmas about a0 and B0                                   *)
@@ -582,21 +593,21 @@ qed.
 (*   anc   anchor      = a0 N                                         *)
 (*   bcp   B-component = B0 N                                         *)
 (*   kbn   K-bound     = kmax N                                       *)
-(*   ndx   Index       = sampled uniform in [0..tbn N]                *)
+(*   tmx   T-max       = (if kbn < kbs N then 0 else tbn N)           *)
+(*   ndx   Index       = sampled uniform in [0..tmx]                  *)
 (*   kvl   K-value     = (kbs N) + 9 * ndx                            *)
 (*                                                                    *)
 (* All modular and division arithmetic is in the top-level ops        *)
 (* ddr, dmod, kbs, tbn above. The procedure body contains only        *)
 (* assignments and a return statement.                                *)
 (*                                                                    *)
-(* Random sampling uses `dinter [0..N]` with an explicit interval     *)
-(* argument. The interval `[0..N]` is inclusive on both endpoints:    *)
-(* it denotes `{0, 1, ..., N}`. The sugar `kvl <$ [0..N]` is          *)
-(* internally rewritten to `dinter 0 N` and fails in r2024.09, so     *)
-(* we call `dinter [0..N]` explicitly.                                *)
+(* The distribution ops dist_kmax and dist_tbn are defined at the     *)
+(* top level (see above the auxiliary lemmas) so that the procedure   *)
+(* body never calls `dinter` directly.                                *)
 (*                                                                    *)
-(* The result of sample_triangle is returned as an `if ... then ...   *)
-(* else ...` expression.                                              *)
+(* The conditional upper bound of sample_triangle is computed first   *)
+(* into the local variable tmx, so that the sampling sees only the    *)
+(* variable tmx, not a compound if-expression.                        *)
 (*                                                                    *)
 (* Whitespace: two spaces indent a `proc` inside the module, four     *)
 (* spaces indent a `var` or an assignment inside a `proc`. Tabs are   *)
@@ -605,30 +616,22 @@ qed.
 module MRSRep = {
   proc sample_basic(N : int) : int * int = {
     var kvl : int;
-    kvl <$ dinter 0 (kmax N);
-    return (a0 N + 9 * kvl, B0 N - 19 * kvl);
+    kvl <$ dist_kmax N;
+    return ((a0 N) + (9 * kvl), (B0 N) - (19 * kvl));
   }
 
   proc sample_triangle(N : int) : int * int = {
-    var res : int * int;
-    var anc, bcp, kbn, ddr, dmod, kbs, tbn, ndx, kvl : int;
+    var anc, bcp, kbn, tmx, ndx, kvl : int;
     anc <- a0 N;
     bcp <- B0 N;
     kbn <- kmax N;
-    ddr <- dr (2 * (dr N));
-    dmod <- ddr %% 9;
-    kbs <- (bcp - dmod) %% 9;
-    tbn <- (kbn - kbs) %/ 9;
-    if (kbn < kbs) {
-      res <- (0, 0);
-    } else {
-      ndx <$ dinter 0 tbn;
-      kvl <- kbs + 9 * ndx;
-      res <- (anc + 9 * kvl, bcp - 19 * kvl);
-    }
-    return res;
+    tmx <- (if (kbn < kbs N) then 0 else tbn N);
+    ndx <$ dist_tbn N;
+    kvl <- (kbs N) + 9 * ndx;
+    return (if (kbn < kbs N) then (0, 0)
+            else ((anc + (9 * kvl)), (bcp - (19 * kvl))));
   }
-
+}.
 
 lemma triangle_k0_le_kmax (N : int) :
   162 < N =>
@@ -710,11 +713,11 @@ lemma sample_triangle_equiv (N : int) :
 proof.
   move=> hN.
   proc.
-  seq 3 3 : (={anc, bcp, kbn}).
+  seq 4 4 : (={anc, bcp, kbn, tmx}).
   - auto.
-  seq 1 1 : (={ndx, anc, bcp, kbn}).
+  seq 1 1 : (={ndx, anc, bcp, kbn, tmx}).
   - rnd; auto.
-  - seq 1 1 : (={kvl, ndx, anc, bcp, kbn}).
+  - seq 1 1 : (={kvl, ndx, anc, bcp, kbn, tmx}).
     + auto.
     + auto.
 qed.
